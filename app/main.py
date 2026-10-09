@@ -797,18 +797,35 @@ REFERENCES = {
 }
 
 
+_REF_DET = {}
+
+
+def ref_detections(rid):
+    """YOLO11 boxes for a reference clip (<id>.det.json next to this file), cached until the file changes."""
+    p = os.path.join(os.path.dirname(os.path.abspath(__file__)), rid + ".det.json")
+    try:
+        m = os.path.getmtime(p)
+        if _REF_DET.get(rid, (None, None))[0] != m:
+            with open(p) as f:
+                _REF_DET[rid] = (m, json.load(f))
+        return _REF_DET[rid][1]
+    except Exception:
+        return {"frames": [], "fps": None}
+
+
 def reference_clips():
     """Outside footage the team rated by hand. Shown in Review, never mixed into the measured scan or the scores."""
     out = []
     for rid, m in REFERENCES.items():
         if not os.path.exists(os.path.join(REF_DIR, rid + ".mp4")):
             continue
+        det = ref_detections(rid)
         out.append({"id": rid, "source": "reference:" + rid, "camera_id": "reference", "start": 0, "end": None,
                     "similarity": 1.0, "filename": rid + ".mp4", "caption": m["caption"], "kinds": ["hazard"],
-                    "queries": [], "reference": True, "detections": {"frames": []},
+                    "queries": [], "reference": True, "detections": det,
                     "analysis": {"verdict": "CLOSE_CALL", "score": m["score"], "who_at_risk": "none", "threat": "none",
                                  "threat_side": "none", "severity": "high", "risk": 1.0, "peak_t": m["observations"][1]["t"],
-                                 "hazard": "work_zone", "has_detections": False, "cue": False, "camera_mode": "fixed",
+                                 "hazard": "work_zone", "has_detections": bool(det.get("frames")), "cue": False, "camera_mode": "fixed",
                                  "warning": m["title"] + " — rated 10.0 by the team (reference clip, not scored by CloseCall).",
                                  "clearance_m": None, "distance_m": None, "motion": None, "approaching": False,
                                  "location": m["location"], "observations": m["observations"], "category": "work_zone",
