@@ -4,7 +4,7 @@ Real-Time Video Agents Hack NYC · build 9:30 AM · submit by 4:30 PM ET
 
 **Your job:** your agent builds the accuracy scoring while you make the answer key (the labels) and then test the app like a city traffic engineer. Part A (this top part) is for you; Part B at the bottom is your agent's brief.
 
-**What we're building (1 line):** CloseCall finds near misses between people and cars in dashcam video, flags construction-zone hazards like exposed wires or open holes, lets a person approve or reject each one, and reports how often it's right.
+**What we're building (1 line):** CloseCall gives people on bikes and on foot Tesla-style eyes: it finds near misses with cars in dashcam video, shows who was at risk and where the threat came from, lets a person approve or reject each one, and reports how often it's right.
 
 ---
 
@@ -34,6 +34,7 @@ Real-Time Video Agents Hack NYC · build 9:30 AM · submit by 4:30 PM ET
 - ✗ **By 11:00:** all 40 labeled and committed. Tell Teammate 1 and your agent "labels done".
 - ✗ **11:30–2:30, tester:** when Teammate 2 says the app is live, use it like a city engineer. Use the reviewer name **`test`** so your clicks don't count. Every 30 minutes, send Teammate 2 a short bug list: what you clicked, what happened, what you expected. Check that:
   - clips open,
+  - each clip's Rider view shows the threat on the correct side,
   - hazard clips show their hazard tag,
   - Approve and Reject save,
   - the Decision log updates,
@@ -86,7 +87,7 @@ Measure how often CloseCall is right about **near misses**, with honest ranges, 
 
 ### Shared contract (read only, except the files you own)
 - `closecall_candidates`: segment_id, camera_id, query, kind, search_score, has_person, has_vehicle, passed_yolo, created_at
-- `closecall_verdicts`: segment_id, camera_id, start_time, end_time, playback_link, yolo_objects, verdict, type, severity, when_in_clip, hazard, reason, final_answer, prompt_version, created_at
+- `closecall_verdicts`: segment_id, camera_id, start_time, end_time, playback_link, yolo_objects, verdict, type, severity, when_in_clip, who_at_risk, threat, threat_side, hazard, reason, final_answer, prompt_version, created_at
 - `closecall/labels/labels_teammate3.csv` (clips 1–40) and `closecall/labels/labels_teammate4.csv` (clips 21–60), columns `number, segment_id, how_to_view, label`
 - `closecall/labels/key.csv` (number → which list the clip came from)
 - `closecall/notes/schema.md` — the real table and field names
