@@ -4,7 +4,7 @@ Real-Time Video Agents Hack NYC · build 9:30 AM · submit by 4:30 PM ET
 
 **Your job:** you make the answer key the whole project is graded against, then you test the app like a real city traffic engineer. You don't need a build machine (only two per team).
 
-**What we're building (1 line):** CloseCall finds near misses between people and cars in dashcam video, lets a person approve or reject each one, and reports how often it's right.
+**What we're building (1 line):** CloseCall finds near misses between people and cars in dashcam video, flags construction-zone hazards like exposed wires or open holes, lets a person approve or reject each one, and reports how often it's right.
 
 ---
 
@@ -23,6 +23,7 @@ Real-Time Video Agents Hack NYC · build 9:30 AM · submit by 4:30 PM ET
 - ✗ **By 11:00:** all 40 labeled and committed. Tell Teammate 1 "labels done".
 - ✗ **11:30–2:30, tester:** when Teammate 2 says the app is live, use it like a city engineer. Use the reviewer name **`test`** so your clicks don't count. Every 30 minutes, send Teammate 2 a short bug list: what you clicked, what happened, what you expected. Check that:
   - clips open,
+  - hazard clips show their hazard tag,
   - Approve and Reject save,
   - the Decision log updates,
   - the Accuracy and Data & Limits tabs load,
@@ -31,6 +32,8 @@ Real-Time Video Agents Hack NYC · build 9:30 AM · submit by 4:30 PM ET
 - ✗ **3:15–4:15:** play the judge in rehearsals and ask the hard questions (see Teammate 4's list). If judges ask how we measured accuracy, the answer is: "Two of us labeled the clips blind, without seeing the AI's answers, and we measured how often we agreed."
 
 ## Labeling rules
+You only label close calls. If a clip shows a hazard (wires, a hole, debris) but no close call, label it `NO_CONFLICT`.
+
 - **CLOSE_CALL:** a person (walking or on a bike) in or entering the road comes within about one car length of a moving vehicle, **or** someone has to react suddenly (hard braking, swerving, stopping short, jumping back).
 - **NO_CONFLICT:** the person is on the sidewalk or far from the car's path, the car is stopped or parked, or the crossing is normal with plenty of room.
 - **CANT_TELL:** something is hidden, too dark or blurry, or the clip ends before you can see what happens.
