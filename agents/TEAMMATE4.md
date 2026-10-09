@@ -1,8 +1,8 @@
-# CloseCall — Teammate 4: Story, Submission & Timekeeper
+# CloseCall — Teammate 4: App tabs, Story & Submission
 
 Real-Time Video Agents Hack NYC · build 9:30 AM · submit by 4:30 PM ET
 
-**Your job:** make sure we submit on time and that the judges understand why CloseCall matters. You're also the team's clock. You don't need a build machine (only two per team).
+**Your job:** your agent builds three of the app's tabs (Decision log, Accuracy, Data & Limits) and the counter row while you label clips, keep the team's clock and make sure we submit on time. Part A (this top part) is for you; Part B at the bottom is your agent's brief.
 
 **What we're building (1 line):** CloseCall finds near misses between people and cars in dashcam video, flags construction-zone hazards like exposed wires or open holes, lets a person approve or reject each one, and reports how often it's right.
 
@@ -10,6 +10,17 @@ Real-Time Video Agents Hack NYC · build 9:30 AM · submit by 4:30 PM ET
 
 ## Setup
 - ✗ Accept the invite to the GitHub repo `Sebilopez1/closecall` (check your email or github.com/notifications).
+- ✗ Make a GitHub token: **Settings → Developer settings → Personal access tokens → Tokens (classic) → Generate new token (classic)**. Expiration: 7 days. Scope: tick **repo**. Copy it into your notes. (Revoke it after the event.)
+- ✗ On your build machine, pick the **same team number as the rest of the team** (you only get one choice) so you share one database. Then, in the terminal (not the agent chat):
+  ```
+  cd ~/vast-builders-challenge
+  git clone https://github.com/Sebilopez1/closecall
+  git config --global credential.helper 'cache --timeout=36000'
+  cd closecall && git push
+  ```
+  Username: your GitHub username. Password: paste the token. Then type `cd ..`, `agent` and `/model` → **Auto Balance**, and paste:
+  > Read closecall/agents/TEAMMATE4.md completely, then carry out Part B autonomously, start to finish. Only stop where it says STOP-AND-ASK.
+- ✗ While you label, don't read your agent's screen: it may show the AI's answers.
 - ✗ Install Loom (or know your screen recorder) and test a 30-second recording with your voice.
 - ✗ Read the pitch and the demo script below.
 - ✗ Confirm with the organizers whether 4:30 is the submission **deadline** or when submissions **open**, and the demo video length limit. Tell the team.
@@ -30,9 +41,8 @@ Real-Time Video Agents Hack NYC · build 9:30 AM · submit by 4:30 PM ET
 - ✗ **~10:15, when Teammate 1 says "LABELS READY":** you label **clips 21–60**:
   1. Open `github.com/Sebilopez1/closecall/blob/main/labels/labels_teammate4.csv` and tap the **pencil (Edit)** icon.
   2. Each line looks like `27,seg_123,<how to view>,`. Watch that clip, then type the label right after the last comma: `CLOSE_CALL`, `NO_CONFLICT` or `CANT_TELL` (exact spelling, no spaces; rules below).
-  3. Tap **Commit changes** every 10 clips.
+  3. Tap **Commit changes** every 10 clips. When you're done, tell your agent "labels done".
   - Don't look at the AI's answers, and don't discuss labels with Teammate 3 until you're both done. Your overlap (clips 21–40) measures agreement.
-  - If clips only open on the build machines, label at Teammate 2's screen.
 - ✗ **11:00–3:00, story:**
   - Write the submission text in your notes: project name, description (the pitch below), tools used (list below), repo link, all four names and emails.
   - Practice the 60-second pitch and the 3-minute demo with Teammate 1 at lunch.
@@ -78,3 +88,70 @@ Cities usually redesign a dangerous street only after someone is injured, becaus
 - **NO_CONFLICT:** on the sidewalk or far away, the car is stopped, or there's plenty of room.
 - **CANT_TELL:** hidden, too dark or blurry, or the clip ends too soon.
 - A hazard with no close call (wires, a hole, debris) is `NO_CONFLICT`. Hazards aren't labeled today.
+
+---
+
+## Part B — Agent brief: Tabs agent
+
+### Who you are
+You are the **Tabs agent** for team CloseCall at a one-day hackathon. Your human is **Teammate 4**. Three other agents share the team's VAST database and the GitHub repo cloned at `closecall/` (inside `~/vast-builders-challenge`): **Teammate 2's App agent** owns the app shell, the Review tab and the decisions table, and is the **only one who deploys**; **Teammate 1's Pipeline agent** writes the clip tables; **Teammate 3's Scoring agent** writes `results.json`.
+
+### Mission
+Build three of the app's four tabs (**Decision log**, **Accuracy** and **Data & Limits**) plus the **counter row**, each in its own file that the app shell imports.
+
+### How to work
+1. Before writing any code, read `README.md`, `ARCHITECTURE_REFERENCE.md` (if present) and every `SKILL.md` under `.cursor/skills/`, especially the database and deploy skills, so you use the same framework as the app. Never invent APIs.
+2. `git pull` and read `closecall/status/app.md`. Teammate 2's agent writes `SHELL READY — tabs in app/tabs/` once the app has one file per tab. Until then, build your parts against stand-in data in the framework the deploy skill expects.
+3. Do tasks **T1 → T5 in order without waiting for Teammate 4 between tasks.** For each task:
+   - write a 3-bullet plan,
+   - build it,
+   - run the app on your own machine to test it (never deploy),
+   - check the task's **Done when** line,
+   - `git pull --rebase`, then commit and push,
+   - append one line to `closecall/status/tabs.md`: `HH:MM ET — T# done — <one-line result>`, then a line `TABS UPDATED` so Teammate 2's agent redeploys.
+4. **STOP-AND-ASK** (stop and wait for Teammate 4) only when:
+   - (a) you'd delete, drop or overwrite any table or data;
+   - (b) git asks for credentials;
+   - (c) you're stuck for 10+ minutes after two fix attempts — summarize the problem and offer two options;
+   - (d) an action would touch anything outside `closecall/`.
+5. If something breaks in the environment: run the starter-kit health check ("run a git pull", then "check that everything is working"). If it's still broken, use `/ask-cosmos` and tell Teammate 4.
+
+### Hard rules
+- **Blind labeling:** Teammate 4 labels clips until about 11:00. Until Teammate 4 says "labels done", never show Cosmos verdicts or reasons in your replies.
+- Never deploy. Only Teammate 2's agent deploys.
+- Never put keys or tokens in code, files, logs or commits. Use the environment variables that are already set.
+- No face recognition, no license plates, no identifying or tracking people.
+- Never write to the database. You only read tables.
+- Decisions made with reviewer name `test` are for testing. Hide them everywhere.
+- Only edit: `closecall/app/tabs/decision_log.*`, `closecall/app/tabs/accuracy.*`, `closecall/app/tabs/data_limits.*`, `closecall/app/tabs/counters.*`, `closecall/status/tabs.md`. **Never edit anything else.** If you need a change in the shell, add a line `REQUEST: ...` to `status/tabs.md` for Teammate 2's agent.
+
+### Shared contract (read only)
+- `closecall_verdicts`: segment_id, camera_id, start_time, end_time, playback_link, yolo_objects, verdict, type, severity, when_in_clip, hazard, reason, final_answer, prompt_version, created_at
+- `closecall_decisions`: decision_id, segment_id, action (approve or reject), reason, reviewer, verdict_at_decision, prompt_version, decided_at
+- `closecall/results.json` (Teammate 3's agent writes it) — shaped like this:
+  `{"generated_at": "...", "n_test": 0, "kappa": 0.0, "hazards_found": {"wires": 0}, "versions": [{"name": "...", "precision": {"value": 0.0, "low": 0.0, "high": 0.0, "n": 0}, "recall": {...}, "coverage": {...}}]}`
+- `closecall/notes/schema.md` — the real table and field names
+
+### Tasks
+
+**T1 — Data & Limits tab (10:15).** Show exactly the text below. **Done when:** it renders locally.
+
+**T2 — Decision log tab (10:30).** A table of every real decision (hide reviewer `test`) with segment, action, verdict at decision, prompt version, reviewer, time and reason. Newest first. With no rows yet, show "No decisions yet." **Done when:** it renders with real or stand-in rows.
+
+**T3 — Counter row (11:00).** clips checked · close calls found · hazards found · waiting for review · decisions made, counted from `closecall_verdicts` and `closecall_decisions` (ignore reviewer `test`). **Done when:** the numbers match a manual count.
+
+**T4 — Accuracy tab (as soon as `status/scoring.md` says RESULTS READY; until then show "Results will appear here after scoring").**
+- Pull first and read `closecall/results.json`.
+- Show a table of the versions with precision, recall and coverage, each written as `value (low–high), n=…`. Also show n_test, kappa and hazards found by type.
+- Under it: "Measured on our hand-labeled test clips. Ranges are 95% intervals. Hazard tags aren't scored yet."
+
+**T5 — Polish (2:30).** Match the Review tab's look: even spacing, readable fonts, no clutter. Push and write `TABS UPDATED`. At 3:00, write `TABS FROZEN`.
+
+### Data & Limits text
+```
+CloseCall looks at places and patterns, never people: no face recognition, no license plates,
+no tracking anyone. Raw video stays in VAST; only events and decisions are saved. Every action
+is approved by a person and logged. Limits: tested on a small hand-labeled set of dashcam
+clips; Cosmos can misjudge fast, dark or hidden scenes, so unclear clips go to a person.
+Hazard tags are Cosmos's reading of the clip and are not yet scored against hand labels.
+```
