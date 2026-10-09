@@ -35,6 +35,9 @@ MIN_SIM = float(os.environ.get("CLOSECALL_MIN_SIMILARITY", "0.25"))
 TOP_K = int(os.environ.get("CLOSECALL_TOP_K", "20"))
 MAX_CLIPS = int(os.environ.get("CLOSECALL_MAX_CLIPS", "60"))
 INSECURE = os.environ.get("VSS_INSECURE", "1") == "1"
+RIDER_CAMS = {c.strip() for c in os.environ.get("CLOSECALL_RIDER_CAMS", "nyc_bike_gopro-1").split(",") if c.strip()}
+SKIP_CAMS = {c.strip() for c in os.environ.get("CLOSECALL_SKIP_CAMS", "smartspace_cam-1,sdg_warehouse_cam-2").split(",") if c.strip()}
+VERSION = "rider_v2"
 
 RIDER_QUERIES = [
     ("close_pass", "car passing close to a cyclist"),
@@ -117,13 +120,13 @@ def vss(method, path, body=None, params=None, timeout=90):
             raise RuntimeError(f"{method} {path} -> {e.code}: {detail}")
 
 
-def search(query):
-    body = {"query": query, "top_k": TOP_K, "llm_top_n": 0, "min_similarity": MIN_SIM,
+def search(query, camera=None, top_k=None):
+    body = {"query": query, "top_k": top_k or TOP_K, "llm_top_n": 0, "min_similarity": MIN_SIM,
             "include_public": True}
     if TAGS:
         body["tags"] = TAGS
-    if CAMERA:
-        body["metadata_filters"] = {"camera_id": CAMERA}
+    if camera or CAMERA:
+        body["metadata_filters"] = {"camera_id": camera or CAMERA}
     try:
         return vss("POST", "/api/v1/search", body)
     except RuntimeError as e:
@@ -155,9 +158,9 @@ def clip_fields(item):
     """Pull the fields we need out of one search result, whatever the exact key names are."""
     meta = item.get("metadata") if isinstance(item.get("metadata"), dict) else {}
     src = first(item, ["source", "segment_source", "s3_uri", "uri"]) or first(meta, ["source"])
-    start = first(item, ["start_time", "segment_start", "start_sec", "best_match_start_sec", "start"]) \
+    start = first(item, ["segment_start_sec", "start_time", "segment_start", "start_sec", "best_match_start_sec", "start"]) \
         or first(meta, ["start_time", "segment_start"])
-    end = first(item, ["end_time", "segment_end", "end_sec", "best_match_end_sec", "end"]) \
+    end = first(item, ["segment_end_sec", "end_time", "segment_end", "end_sec", "best_match_end_sec", "end"]) \
         or first(meta, ["end_time", "segment_end"])
     return {
         "source": src,
@@ -169,6 +172,7 @@ def clip_fields(item):
         "start": start,
         "end": end,
         "tags": item.get("tags") or meta.get("tags") or [],
+        "filename": first(item, ["filename"]) or "",
     }
 
 
@@ -229,6 +233,9 @@ def norm_detections(js):
     W = as_float(first(js if isinstance(js, dict) else {}, ["width", "image_width", "frame_width", "img_w"]))
     H = as_float(first(js if isinstance(js, dict) else {}, ["height", "image_height", "frame_height", "img_h"]))
     fps = as_float(first(js if isinstance(js, dict) else {}, ["fps", "frame_rate"]))
+    shape = js.get("video_shape") if isinstance(js, dict) else None
+    if isinstance(shape, list) and len(shape) >= 2 and not (W and H):
+        H, W = as_float(shape[0]), as_float(shape[1])
     frames = []
     seq = None
     if isinstance(root, dict) and isinstance(root.get("frames"), list):
@@ -245,6 +252,8 @@ def norm_detections(js):
         if isinstance(f, dict) and any(k in f for k in ("objects", "detections", "boxes", "objs", "predictions")):
             fw = as_float(first(f, ["width", "image_width"]), W)
             fh = as_float(first(f, ["height", "image_height"]), H)
+            if isinstance(f.get("shape"), list) and len(f["shape"]) >= 2:
+                fh, fw = as_float(f["shape"][0], fh), as_float(f["shape"][1], fw)
             t = as_float(first(f, ["t", "timestamp", "time", "ts", "pts", "time_sec", "frame", "frame_idx",
                                    "frame_index", "frame_id"]), float(i))
             items = first(f, ["objects", "detections", "boxes", "objs", "predictions"]) or []
@@ -300,54 +309,103 @@ THREAT_WORDS = {
 }
 
 
-def analyze(c, det):
-    cap = (c.get("caption") or "").lower()
-    kinds = set(c.get("kinds", []))
-    frames = det.get("frames", [])
-    has_bike = any(kind_of(o["label"]) == "bike" for f in frames for o in f["objs"])
-    has_ped = any(kind_of(o["label"]) == "person" for f in frames for o in f["objs"])
-    has_veh = any(kind_of(o["label"]) == "vehicle" for f in frames for o in f["objs"])
-    if not frames:
-        has_bike = bool(re.search(r"cyclist|bicycl|bike", cap))
-        has_ped = bool(re.search(r"pedestrian|person|people|walk", cap))
-        has_veh = bool(re.search(r"car|vehicle|bus|truck|van", cap))
-    who = "cyclist" if has_bike or re.search(r"cyclist|bicycl", cap) else ("pedestrian" if has_ped else "none")
+def cam_mode(cam):
+    """rider = camera on the bike (the rider's own eyes); dashcam = camera in a car; fixed = street camera."""
+    cam = (cam or "").lower()
+    if cam in RIDER_CAMS or "bike" in cam or "gopro" in cam:
+        return "rider"
+    if "pie" in cam or "dash" in cam:
+        return "dashcam"
+    return "fixed"
 
+
+def vru_vehicle_risk(frames, use_ego):
+    """How close any vehicle gets to a person on a bike or on foot that the camera can see."""
     best = {"risk": 0.0, "side": "none", "veh": "Car", "t": None, "ego": False}
     for f in frames:
         vrus = [o for o in f["objs"] if kind_of(o["label"]) in ("bike", "person")]
         vehs = [o for o in f["objs"] if kind_of(o["label"]) == "vehicle" and o["conf"] >= 0.3]
-        # a person sitting on a bicycle counts as a cyclist, not a separate pedestrian
         bikes = [o for o in vrus if kind_of(o["label"]) == "bike"]
         for v in vrus:
+            # a person sitting on a bicycle counts as the cyclist, not a separate pedestrian
             if kind_of(v["label"]) == "person" and any(overlap(v["box"], b["box"]) > 0.2 for b in bikes):
                 continue
             h = max(1e-3, v["box"][3] - v["box"][1])
             cx = (v["box"][0] + v["box"][2]) / 2
-            # the dashcam car itself: a big, central person/bike box means the camera car is very close
-            ego = max(0.0, min(1.0, (h - 0.22) / 0.33)) * (1.0 if abs(cx - 0.5) < 0.3 else 0.6)
-            if ego > best["risk"]:
-                # a cyclist rides with traffic, so the camera car is behind them; a pedestrian crosses it,
-                # so the car comes from the side facing the middle of the image
-                eside = "behind" if kind_of(v["label"]) == "bike" or bikes else ("left" if cx > 0.5 else "right")
-                best = {"risk": ego, "side": eside, "veh": "Car", "t": f["t"], "ego": True}
+            if use_ego:
+                # dashcam: a big, central person/bike box means the camera car itself is very close
+                ego = max(0.0, min(1.0, (h - 0.22) / 0.33)) * (1.0 if abs(cx - 0.5) < 0.3 else 0.6)
+                if ego > best["risk"]:
+                    eside = "behind" if kind_of(v["label"]) == "bike" or bikes else ("left" if cx > 0.5 else "right")
+                    best = {"risk": ego, "side": eside, "veh": "Car", "t": f["t"], "ego": True}
             for car in vehs:
                 g = gap(v["box"], car["box"]) / h          # gap measured in "person heights"
                 r = max(0.0, min(1.0, 1.0 - g / 2.5))       # ~2.5 heights is about one car length
-                ch = car["box"][3] - car["box"][1]
-                if ch < 0.08:                                # far-away traffic doesn't count
+                if car["box"][3] - car["box"][1] < 0.08:     # far-away traffic doesn't count
                     r *= 0.4
                 if r > best["risk"]:
-                    vx = (car["box"][0] + car["box"][2]) / 2
-                    dx = vx - cx
+                    dx = (car["box"][0] + car["box"][2]) / 2 - cx
                     dy = car["box"][3] - v["box"][3]         # + = car nearer the camera than the person
                     if abs(dx) * 1.2 >= abs(dy):
                         side = "left" if dx < 0 else "right"
                     else:
                         side = "behind" if dy > 0 else "ahead"
                     best = {"risk": r, "side": side, "veh": car["label"].capitalize(), "t": f["t"], "ego": False}
+    return best
 
-    cue = bool(re.search(r"brak|swerv|sudden|abrupt|close call|near miss|almost|narrowly|cut(s|ting)? off|yield|jump", cap))
+
+def rider_cam_risk(frames, cap):
+    """Camera on the bike: the rider is the camera. A vehicle that fills a big part of the frame is close
+    to the rider; its position in the frame says which side it is on."""
+    best = {"risk": 0.0, "side": "none", "veh": "Car", "t": None, "ego": True}
+    parked = bool(re.search(r"parked", cap))
+    heights = []
+    for f in frames:
+        mh = 0.0
+        for car in f["objs"]:
+            if kind_of(car["label"]) != "vehicle" or car["conf"] < 0.35:
+                continue
+            x1, y1, x2, y2 = car["box"]
+            h, cx = y2 - y1, (x1 + x2) / 2
+            mh = max(mh, h)
+            r = max(0.0, min(1.0, (h - 0.2) / 0.35))
+            if y2 > 0.92:                       # reaches the bottom of the frame: right beside the bike
+                r = min(1.0, r + 0.1)
+            side = "left" if cx < 0.38 else "right" if cx > 0.62 else "ahead"
+            if parked and side == "right":      # cars parked along the curb aren't a threat by themselves
+                r *= 0.6
+            if r > best["risk"]:
+                best = {"risk": r, "side": side, "veh": car["label"].capitalize(), "t": f["t"], "ego": True}
+        heights.append(mh)
+    if len(heights) >= 8:
+        q = max(1, len(heights) // 4)
+        if max(heights[-q:]) - max(heights[:q]) > 0.08:   # the closest vehicle keeps getting bigger
+            best["risk"] = min(1.0, best["risk"] + 0.1)
+            best["approaching"] = True
+    return best
+
+
+def analyze(c, det):
+    cap = (c.get("caption") or "").lower()
+    kinds = set(c.get("kinds", []))
+    frames = det.get("frames", [])
+    mode = cam_mode(c.get("camera_id"))
+    has_bike = any(kind_of(o["label"]) == "bike" for f in frames for o in f["objs"])
+    has_ped = any(kind_of(o["label"]) == "person" for f in frames for o in f["objs"])
+    if not frames:
+        has_bike = bool(re.search(r"cyclist|bicycl|bike", cap))
+        has_ped = bool(re.search(r"pedestrian|person|people|walk", cap))
+    if mode == "rider":
+        who = "cyclist"
+        best = rider_cam_risk(frames, cap)
+        other = vru_vehicle_risk(frames, use_ego=False)
+        if other["risk"] > best["risk"]:
+            best = other
+    else:
+        who = "cyclist" if has_bike or re.search(r"cyclist|bicycl", cap) else ("pedestrian" if has_ped else "none")
+        best = vru_vehicle_risk(frames, use_ego=(mode == "dashcam"))
+
+    cue = bool(re.search(r"brak|swerv|sudden|abrupt|close call|near miss|almost|narrowly|cut(s|ting)? off|yield|jump|honk", cap))
     risk = best["risk"] + (0.15 if cue else 0.0)
     severity = "high" if risk >= 0.75 else "medium" if risk >= 0.45 else "low" if risk >= 0.2 else "none"
 
@@ -357,22 +415,24 @@ def analyze(c, det):
         if re.search(pat, cap):
             threat = k
             break
-    if threat == "other" and kinds - {"hazard"}:
+    if threat == "other" and mode == "rider" and best["side"] in ("left", "right"):
+        threat = "close_pass"
+    if threat == "other" and kinds - {"hazard"} and mode != "rider":
         threat = sorted(kinds - {"hazard"})[0]
-    if threat == "other" and best["ego"]:
+    if threat == "other" and best.get("ego") and mode == "dashcam":
         threat = "close_pass" if who == "cyclist" else "crossing_car"
 
     hazard = "none"
     for k, pat in (("wires", r"wire|cable"), ("open_hole", r"\bhole\b|trench|pothole|excavat"),
                    ("equipment", r"excavator|crane|bulldozer|backhoe|forklift|heavy equipment"),
                    ("debris", r"debris|rubble|object (lying|in) the road"),
-                   ("work_zone", r"construction|road ?work|work zone|cone|barrier|scaffold")):
+                   ("work_zone", r"construction|road ?work|work zone|traffic cone|orange cone|barrier|scaffold")):
         if re.search(pat, cap):
             hazard = k
             break
 
     murky = bool(re.search(r"\bdark\b|blurr|unclear|obscur|hard to see|can'?t see", cap))
-    if (who == "none" and not frames and not cap) or (murky and (not frames or who != "none")):
+    if (who == "none" and not frames and not cap) or (murky and not frames):
         verdict = "CANT_TELL"
     elif who != "none" and (severity == "high" or (severity == "medium" and cue)):
         verdict = "CLOSE_CALL"
@@ -385,7 +445,7 @@ def analyze(c, det):
 
     side = best["side"] if verdict != "NO_CONFLICT" or best["risk"] > 0.2 else "none"
     veh = "Bus" if threat == "bus_pulling_in" else best["veh"]
-    if verdict == "CANT_TELL" and murky:
+    if verdict == "CANT_TELL" and murky and not frames:
         warning = "Too dark or blurry to be sure. A person should check this clip."
     elif who == "none" or verdict == "NO_CONFLICT":
         warning = "No threat to anyone on a bike or on foot." if hazard == "none" else \
@@ -396,7 +456,8 @@ def analyze(c, det):
     return {"verdict": verdict, "who_at_risk": who, "threat": threat if verdict != "NO_CONFLICT" else "none",
             "threat_side": side if verdict != "NO_CONFLICT" else "none", "severity": severity,
             "risk": round(min(1.0, risk), 3), "peak_t": best["t"], "hazard": hazard, "warning": warning,
-            "has_detections": bool(frames), "cue": cue}
+            "has_detections": bool(frames), "cue": cue, "camera_mode": mode,
+            "approaching": bool(best.get("approaching"))}
 
 
 # ---------------------------------------------------------------- build the clip list
@@ -408,17 +469,19 @@ def build():
     try:
         login(force=True)
         found = {}
-        for kind, q in RIDER_QUERIES + HAZARD_QUERIES:
+        plan = [(k, q, cam) for k, q in RIDER_QUERIES for cam in sorted(RIDER_CAMS)] + \
+               [(k, q, None) for k, q in RIDER_QUERIES + HAZARD_QUERIES]
+        for kind, q, cam in plan:
             try:
-                res = search(q)
+                res = search(q, camera=cam, top_k=15 if cam else None)
             except Exception as e:  # keep going with the other searches
-                log(f"search failed for '{q}': {e}")
+                log(f"search failed for '{q}' ({cam or 'all cameras'}): {e}")
                 continue
             items = (res or {}).get("results") or []
-            log(f"search '{q}': {len(items)} hits")
+            log(f"search '{q}' ({cam or 'all cameras'}): {len(items)} hits")
             for it in items:
                 f = clip_fields(it)
-                if not f["source"]:
+                if not f["source"] or f["camera_id"] in SKIP_CAMS:
                     continue
                 c = found.setdefault(f["source"], dict(f, kinds=[], queries=[]))
                 c["similarity"] = max(c["similarity"], f["similarity"])
@@ -441,7 +504,7 @@ def build():
                 STATE["clips"] = clips[:]
         STATE["clips"] = clips
         with open(os.path.join(DATA_DIR, "clips.json"), "w") as fh:
-            json.dump(clips, fh)
+            json.dump({"version": VERSION, "clips": clips}, fh)
         STATE.update(status="ready", finished=now_iso())
         log(f"ready: {len(clips)} clips")
     except Exception as e:
@@ -453,8 +516,10 @@ def load_cached():
     p = os.path.join(DATA_DIR, "clips.json")
     if os.path.exists(p):
         try:
-            STATE["clips"] = json.load(open(p))
-            STATE["status"] = "ready"
+            saved = json.load(open(p))
+            if isinstance(saved, dict) and saved.get("version") == VERSION:
+                STATE["clips"] = saved["clips"]
+                STATE["status"] = "ready"
         except Exception:
             pass
 
@@ -537,7 +602,7 @@ def accuracy():
 # ---------------------------------------------------------------- HTTP
 def public_clip(c, blind=False):
     out = {k: c.get(k) for k in ("id", "source", "original_video", "camera_id", "location", "start", "end",
-                                  "similarity")}
+                                  "similarity", "filename")}
     out["duration"] = None
     if not blind:
         out.update(caption=c.get("caption"), kinds=c.get("kinds"), queries=c.get("queries"),
@@ -636,7 +701,7 @@ class Handler(BaseHTTPRequestHandler):
                        "reason": (b.get("reason") or "")[:500], "reviewer": (b.get("reviewer") or "anonymous")[:60],
                        "verdict_at_decision": a["verdict"], "who_at_risk": a["who_at_risk"], "threat": a["threat"],
                        "threat_side": a["threat_side"], "severity": a["severity"], "hazard": a["hazard"],
-                       "prompt_version": "rider_v1", "decided_at": now_iso()}
+                       "prompt_version": VERSION, "decided_at": now_iso()}
                 append_jsonl("decisions.jsonl", row)
                 return self.send_json({"ok": True, "decision": row})
             if p == "/api/label":
