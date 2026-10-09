@@ -295,6 +295,7 @@ function frameAt(sec, map) {
 function kindOf(l) { return /bicycl|bike|cyclist/.test(l) ? 'bike' : /person|pedestrian/.test(l) ? 'person' : /car|bus|truck|motor|van|vehicle/.test(l) ? 'vehicle' : 'other'; }
 const KCOL = { bike: '#3ad1ff', person: '#7ee787', vehicle: '#f0f0f0', other: '#9aa0a6' };
 
+const HAZ = { 'ref-manhole': { label: 'faulty manhole (marked by team)', box: [0.13, 0.32, 0.30, 0.40] } };
 function startOverlay() {
   cancelAnimationFrame(raf);
   const v = $('#video'), cv = $('#overlay'), bev = $('#bev');
@@ -321,6 +322,8 @@ function startOverlay() {
         g.strokeStyle = col; g.strokeRect(ox + x1 * dw, oy + y1 * dh, (x2 - x1) * dw, (y2 - y1) * dh);
         g.fillStyle = col; g.fillText(txt, ox + x1 * dw + 3, Math.max(12, oy + y1 * dh - 4));
       }
+      const hz = HAZ[current];   // hazard marked by the team (YOLO's COCO classes have no manholes)
+      if (hz) { const [x1, y1, x2, y2] = hz.box; g.strokeStyle = g.fillStyle = '#ff3b30'; g.lineWidth = 3; g.strokeRect(ox + x1 * dw, oy + y1 * dh, (x2 - x1) * dw, (y2 - y1) * dh); g.font = 'bold 12px sans-serif'; g.fillText(hz.label, ox + x1 * dw, oy + y2 * dh + 14); g.lineWidth = 2; g.font = '12px sans-serif'; }
     }
     drawBev(bev, f);
     raf = requestAnimationFrame(draw);
