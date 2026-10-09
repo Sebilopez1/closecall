@@ -779,6 +779,43 @@ def kappa(a, b):
     return round((po - pe) / (1 - pe), 3) if pe < 1 else 1.0
 
 
+REF_DIR = os.path.join(DATA_DIR, "ref")
+REFERENCES = {
+    "ref-manhole": {
+        "title": "Bus knocks a loose manhole cover out of place",
+        "location": "Reference clip (outside footage, city street)",
+        "caption": ("Security-camera view of a city street, filmed off a monitor. A manhole cover in the curb lane is "
+                    "marked by a single orange cone while cars and a van pass. About 11 seconds in, a city bus drives "
+                    "over it and lurches; the cover is knocked out of place, leaving the manhole open in the travel lane."),
+        "score": 10.0,
+        "observations": [
+            {"type": "work_zone", "text": "Manhole cover in the travel lane marked by only one cone", "gap_m": None, "t": 1.0},
+            {"type": "work_zone", "text": "Bus drives over the manhole and lurches", "gap_m": None, "t": 11.5},
+            {"type": "work_zone", "text": "Cover knocked out of place: open manhole in the lane", "gap_m": None, "t": 13.5},
+        ],
+    },
+}
+
+
+def reference_clips():
+    """Outside footage the team rated by hand. Shown in Review, never mixed into the measured scan or the scores."""
+    out = []
+    for rid, m in REFERENCES.items():
+        if not os.path.exists(os.path.join(REF_DIR, rid + ".mp4")):
+            continue
+        out.append({"id": rid, "source": "reference:" + rid, "camera_id": "reference", "start": 0, "end": None,
+                    "similarity": 1.0, "filename": rid + ".mp4", "caption": m["caption"], "kinds": ["hazard"],
+                    "queries": [], "reference": True, "detections": {"frames": []},
+                    "analysis": {"verdict": "CLOSE_CALL", "score": m["score"], "who_at_risk": "none", "threat": "none",
+                                 "threat_side": "none", "severity": "high", "risk": 1.0, "peak_t": m["observations"][1]["t"],
+                                 "hazard": "work_zone", "has_detections": False, "cue": False, "camera_mode": "fixed",
+                                 "warning": m["title"] + " — rated 10.0 by the team (reference clip, not scored by CloseCall).",
+                                 "clearance_m": None, "distance_m": None, "motion": None, "approaching": False,
+                                 "location": m["location"], "observations": m["observations"], "category": "work_zone",
+                                 "reference": True}})
+    return out
+
+
 def hotspots():
     by = {}
     for c in STATE["clips"]:
@@ -924,13 +961,14 @@ class Handler(BaseHTTPRequestHandler):
             if p == "/api/clips":
                 decided = {d["clip_id"] for d in read_jsonl("decisions.jsonl") if d.get("reviewer", "").lower() != "test"}
                 out = []
-                for c in STATE["clips"]:
+                for c in reference_clips() + STATE["clips"]:
                     pc = public_clip(c)
                     pc["decided"] = c["id"] in decided
+                    pc["reference"] = bool(c.get("reference"))
                     out.append(pc)
                 return self.send_json({"status": STATE["status"], "clips": out})
             if p == "/api/detections":
-                c = next((c for c in STATE["clips"] if c["id"] == q.get("id")), None)
+                c = next((c for c in reference_clips() + STATE["clips"] if c["id"] == q.get("id")), None)
                 return self.send_json(c.get("detections") if c else {"frames": []})
             if p == "/api/label-queue":
                 who = (q.get("labeler") or "").strip().lower()
@@ -979,11 +1017,13 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         try:
             p = urllib.parse.urlparse(self.path).path.rstrip("/")
+            if p == "/api/reference":
+                return self.save_reference(dict(urllib.parse.parse_qsl(urllib.parse.urlparse(self.path).query)))
             b = self.read_body()
             if p == "/api/refresh":
                 threading.Thread(target=build, daemon=True).start()
                 return self.send_json({"ok": True})
-            clip = next((c for c in STATE["clips"] if c["id"] == b.get("clip_id")), None)
+            clip = next((c for c in reference_clips() + STATE["clips"] if c["id"] == b.get("clip_id")), None)
             if p == "/api/decide":
                 if not clip or b.get("action") not in ("approve", "reject"):
                     return self.send_json({"error": "need clip_id and action approve|reject"}, 400)
@@ -1015,7 +1055,52 @@ class Handler(BaseHTTPRequestHandler):
         except Exception as e:
             self.send_json({"error": str(e)[:500]}, 500)
 
+    def save_reference(self, q):
+        rid = q.get("id") or ""
+        n = int(self.headers.get("Content-Length") or 0)
+        if rid not in REFERENCES or not 1000 < n <= 25 * 1024 * 1024:
+            return self.send_json({"error": "unknown reference id or bad size"}, 400)
+        data = self.rfile.read(n)
+        if data[4:8] != b"ftyp":
+            return self.send_json({"error": "not an mp4 file"}, 400)
+        os.makedirs(REF_DIR, exist_ok=True)
+        with open(os.path.join(REF_DIR, rid + ".mp4"), "wb") as fh:
+            fh.write(data)
+        log(f"reference clip {rid} saved ({n} bytes)")
+        return self.send_json({"ok": True, "id": rid, "bytes": n})
+
+    def serve_file(self, path, ctype="video/mp4"):
+        size = os.path.getsize(path)
+        start, end = 0, size - 1
+        rng = self.headers.get("Range") or ""
+        if rng.startswith("bytes="):
+            a, _, b = rng[6:].split(",")[0].partition("-")
+            if a:
+                start, end = int(a), min(int(b), size - 1) if b else size - 1
+            elif b:
+                start = max(0, size - int(b))
+            self.send_response(206)
+            self.send_header("Content-Range", f"bytes {start}-{end}/{size}")
+        else:
+            self.send_response(200)
+        self.send_header("Content-Type", ctype)
+        self.send_header("Accept-Ranges", "bytes")
+        self.send_header("Content-Length", str(end - start + 1))
+        self.end_headers()
+        with open(path, "rb") as fh:
+            fh.seek(start)
+            left = end - start + 1
+            while left > 0:
+                chunk = fh.read(min(65536, left))
+                if not chunk:
+                    break
+                self.wfile.write(chunk)
+                left -= len(chunk)
+
     def proxy_video(self, q):
+        if (q.get("id") or "") in REFERENCES:
+            path = os.path.join(REF_DIR, q["id"] + ".mp4")
+            return self.serve_file(path) if os.path.exists(path) else self.send_json({"error": "not uploaded"}, 404)
         c = next((c for c in STATE["clips"] if c["id"] == q.get("id")), None)
         if not c and (q.get("source") or "").startswith("s3://"):
             c = {"source": q["source"]}                   # any segment from the search, for surveying
