@@ -33,7 +33,15 @@ fi
 echo "== VSS backend host $VSS_HOST -> ${VSS_IP:-not in /etc/hosts}"
 
 echo "== namespace $NS, host $APP_HOST"
-kubectl -n "$NS" create configmap "${APP_NAME}-code" --from-file=app \
+# only the app's code files go into the ConfigMap (a note like "app/app link" would break it)
+re_name='^[-._a-zA-Z0-9]+$'; re_ext='\.(py|html|js|css|json)$'
+CODE_FILES=()
+for f in app/*; do
+  b=$(basename "$f")
+  if [[ -f "$f" && "$b" =~ $re_name && "$b" =~ $re_ext ]]; then CODE_FILES+=("--from-file=$f"); fi
+done
+echo "== code files: ${CODE_FILES[*]#--from-file=}"
+kubectl -n "$NS" create configmap "${APP_NAME}-code" "${CODE_FILES[@]}" \
   --dry-run=client -o yaml | kubectl apply -f -
 kubectl -n "$NS" create secret generic "${APP_NAME}-vss-creds" \
   --from-literal=VSS_URL="$INGRESS_URL" \
