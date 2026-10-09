@@ -1,18 +1,20 @@
 # CloseCall
 
-**Fix dangerous streets before someone gets hurt.**
+**Tesla-style eyes for people on bikes and on foot.**
 
-CloseCall finds near misses between people (pedestrians and cyclists) and moving vehicles in dashcam video, and flags construction-zone hazards like exposed wires, open holes, debris and heavy equipment near people or traffic. It checks each clip with NVIDIA Cosmos and lets a city traffic engineer approve or reject it. Every decision is saved with its evidence, and we measure how often the system is right on clips we labeled by hand.
+Cars get more sensors every year; people on bikes still get a bell. CloseCall watches street footage on behalf of cyclists and pedestrians: for each near miss it says who was at risk, what the threat was (a turning car, an opening door, a close pass, a bus pulling in) and which side it came from, shown as a Tesla-style rider view. It also flags construction-zone hazards like exposed wires, open holes and debris. It checks each clip with NVIDIA Cosmos and lets a safety manager approve or reject it. Every decision is saved with its evidence, and we measure how often the system is right on clips we labeled by hand.
 
 Built at Real-Time Video Agents Hack NYC, October 9, 2026.
 
 ## How it works
-1. **Find:** search the event's Toronto dashcam footage for moments where a person is near a moving vehicle (YOLO must see both), and for work zones with wires, holes, debris or equipment.
-2. **Check:** Cosmos re-watches each candidate with our question and answers `CLOSE_CALL`, `NO_CONFLICT` or `CANT_TELL`, plus a hazard tag (`wires`, `open_hole`, `debris`, `equipment`, `work_zone` or `none`). Unclear clips go to a person instead of being guessed.
-3. **Approve:** a person approves or rejects each clip in the web app. Every decision is logged: who, when, which prompt version.
+1. **Find:** search the event's Toronto dashcam footage for cyclists and pedestrians near moving vehicles (YOLO must see both): close passes, opening doors, right turns across bike lanes, buses pulling in. Also search for work zones with wires, holes, debris or equipment.
+2. **Check:** Cosmos re-watches each candidate with our question and answers `CLOSE_CALL`, `NO_CONFLICT` or `CANT_TELL`, plus who was at risk, what the threat was and which side it came from, and a hazard tag (`wires`, `open_hole`, `debris`, `equipment`, `work_zone` or `none`). Unclear clips go to a person instead of being guessed.
+3. **Approve:** a person approves or rejects each clip in the web app, next to its rider view. Every decision is logged: who, when, which prompt version.
 4. **Score:** near-miss precision, recall and coverage against hand labels, each with a 95% range. Hazard tags aren't scored yet.
 
 **Privacy:** places and patterns, never people. No face recognition, no license plates, no tracking.
+
+**Next:** the same eyes on a phone or helmet camera with live warnings, starting with delivery and bike-share fleets. Every ride adds to a map of dangerous streets for cities.
 
 **Results:** added here after scoring.
 
