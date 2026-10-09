@@ -1,8 +1,8 @@
-# CloseCall — Grant's file
+# CloseCall — Teammate 2: App (review, decisions, accuracy)
 
-Real-Time Video Agents Hack NYC · Friday, October 9, 2026 · build starts 9:30 AM · submit by 4:30 PM ET
+Real-Time Video Agents Hack NYC · build 9:30 AM · submit by 4:30 PM ET
 
-- **Part A** is for you (Grant). The agent ignores it.
+- **Part A** is for you (Teammate 2). The agent ignores it.
 - **Part B** is the brief your build agent follows on its own, start to finish.
 - **Part C** is an optional second agent you can start at 2:30 PM in another terminal.
 
@@ -10,14 +10,12 @@ Real-Time Video Agents Hack NYC · Friday, October 9, 2026 · build starts 9:30 
 
 ## Part A — Your run sheet (human only)
 
-**Before 8:30, on your laptop or phone**
-- ✗ Accept Sebi's invite to the GitHub repo `Sebilopez1/closecall` (check your email or github.com/notifications).
-- ✗ Make a GitHub token: **Settings → Developer settings → Personal access tokens → Tokens (classic) → Generate new token (classic)**. Note: "closecall hackathon". Expiration: 7 days. Scope: tick **repo**. Copy it into your notes app. (Revoke it after the event.)
-- ✗ Read the demo script at the bottom of this file once.
+**Before the build**
+- ✗ Accept the invite to the GitHub repo `Sebilopez1/closecall` (check your email or github.com/notifications).
+- ✗ Make a GitHub token so your build machine can save code: **Settings → Developer settings → Personal access tokens → Tokens (classic) → Generate new token (classic)**. Expiration: 7 days. Scope: tick **repo**. Copy it into your notes. (Revoke it after the event.)
 
-**At the event**
-- ✗ 8:15 Arrive with laptop, charger and photo ID.
-- ✗ 8:30 Get the passcode → open your build machine → pick the **same team number as Sebi** (you only get one choice) → sign into Cursor with the email you applied with → check requests show "Free".
+**Build day**
+- ✗ Open your build machine with the event passcode → pick the **same team number as Teammate 1** (you only get one choice) → sign into Cursor with the email you applied with → check requests show "Free".
 - ✗ 9:30 In the build machine terminal, type each line:
   ```
   cd ~/vast-builders-challenge
@@ -26,33 +24,21 @@ Real-Time Video Agents Hack NYC · Friday, October 9, 2026 · build starts 9:30 
   /model
   ```
   Pick **Auto Balance**, then paste this as your first message:
-  > Read closecall/agents/GRANT.md completely, then carry out Part B autonomously, start to finish. Only stop where it says STOP-AND-ASK.
+  > Read closecall/agents/TEAMMATE2.md completely, then carry out Part B autonomously, start to finish. Only stop where it says STOP-AND-ASK.
 - ✗ If the agent asks permission for every command, choose the option that always allows commands for this session.
 - ✗ When git asks for a username and password: type your GitHub username, and paste the **token** as the password — in the terminal, never in the agent chat.
-- ✗ ~9:55 Open the app: **workshop.thecosmoslabs.com → App**. You should see a page titled CloseCall.
-- ✗ 10:30–11:00 Pull, then label clips 21–60 in `closecall/labels/labels_grant.csv` using the rules at the bottom of this file. Don't look at the AI's answers. Then in the terminal:
-  `cd ~/vast-builders-challenge/closecall && git pull && git add -A && git commit -m "grant labels" && git push`
-- ✗ ~11:30 When Sebi says **VERDICTS READY**, tell your agent: *"Verdicts are ready. Do A5 now."*
+- ✗ ~9:55 Open the app: **workshop.thecosmoslabs.com → App**. You should see a page titled CloseCall. Tell Teammate 3 the app is live.
+- ✗ ~11:20 When Teammate 1 says **VERDICTS READY**, tell your agent: *"Verdicts are ready. Do A5 now."*
+- ✗ 11:30–2:30 Teammate 3 sends you a bug list every 30 minutes. Paste it to your agent: *"Fix these bugs: …"*
 - ✗ 12:30 Checkpoint: approve one real close call in the app and see it in the Decision log.
-- ✗ 3:15 Record the demo video (3 minutes max) with Loom or similar, following the demo script below.
-- ✗ 3:45 Submit at **tokensand.com/vastnyc → Submit your project**:
-  - repo link: github.com/Sebilopez1/closecall
-  - demo video link
-  - description: from `pitch.md`
-  - tools used: see the list below
-  - both names and emails
-
-  Take a screenshot of the confirmation.
-- ✗ 4:15 Rehearse the pitch twice with Sebi.
-
-**Tools used (for the submission form):** NVIDIA Cosmos Reason (via the VAST video pipeline) to check each clip · Cosmos Embed + VAST semantic search to find moments · YOLO11 for person and vehicle detection · VAST DataEngine and VastDB as the system of record · W&B Weave for evaluation and tracing · CoreWeave GPUs hosting the models and our app · Cursor.
+- ✗ 3:15 Feature freeze. Click through the app following the demo script while Teammate 4 records the video.
 
 ---
 
 ## Part B — Agent brief: App agent
 
 ### Who you are
-You are the **App agent** for team CloseCall at a one-day hackathon. Your human is **Grant**. On another build machine, **Sebi's Pipeline agent** finds and checks clips and scores accuracy. You share two things with it: the team's VAST database and the GitHub repo cloned at `closecall/` (inside `~/vast-builders-challenge`).
+You are the **App agent** for team CloseCall at a one-day hackathon. Your human is **Teammate 2**. On another build machine, **Teammate 1's Pipeline agent** finds and checks clips and scores accuracy. You share two things with it: the team's VAST database and the GitHub repo cloned at `closecall/` (inside `~/vast-builders-challenge`). Teammates 3 and 4 have no build machine: Teammate 3 tests your app with reviewer name `test` and sends bug lists through Teammate 2.
 
 ### Mission
 CloseCall finds **near misses between people (pedestrians or cyclists) and moving vehicles** in dashcam video, checks them with Cosmos, and lets a person approve or reject each one. You build the **web app** a city traffic-safety engineer uses. It has four tabs:
@@ -65,7 +51,7 @@ Every click must be saved with its history.
 
 ### How to work
 1. Before writing any code, read `README.md`, `ARCHITECTURE_REFERENCE.md` (if present) and every `SKILL.md` under `.cursor/skills/` — especially the database, deploy and retrieval skills. Use those skills and their APIs. Never invent APIs.
-2. Do tasks **A1 → A10 in order without waiting for Grant between tasks** (A5 and A7 wait on Sebi's status lines; keep working on other tasks meanwhile). For each task:
+2. Do tasks **A1 → A10 in order without waiting for Teammate 2 between tasks** (A5 and A7 wait on Teammate 1's status lines; keep working on other tasks meanwhile). For each task:
    - write a 3-bullet plan,
    - build it,
    - test it,
@@ -73,13 +59,13 @@ Every click must be saved with its history.
    - `git pull --rebase`, then commit and push,
    - append one line to `closecall/status/app.md`: `HH:MM ET — A# done — <one-line result>`.
 3. At the start of each task, check the time with `TZ=America/New_York date` and apply the **scope cuts** below if you're behind.
-4. Every ~10 minutes, run `git pull` and read `closecall/status/pipeline.md`. Sebi's agent writes `VERDICTS READY` and `RESULTS READY` there.
-5. **STOP-AND-ASK** (stop and wait for Grant) only when:
+4. Every ~10 minutes, run `git pull` and read `closecall/status/pipeline.md`. Teammate 1's agent writes `VERDICTS READY` and `RESULTS READY` there.
+5. **STOP-AND-ASK** (stop and wait for Teammate 2) only when:
    - (a) you'd delete, drop or overwrite any table or data you didn't create for testing;
    - (b) git asks for credentials;
    - (c) you're stuck for 10+ minutes after two fix attempts — summarize the problem and offer two options;
    - (d) an action would touch anything outside `closecall/` or our own `closecall_*` tables.
-6. If something breaks in the environment: run the starter-kit health check ("run a git pull", then "check that everything is working"). If it's still broken, use `/ask-cosmos` and tell Grant.
+6. If something breaks in the environment: run the starter-kit health check ("run a git pull", then "check that everything is working"). If it's still broken, use `/ask-cosmos` and tell Teammate 2.
 
 ### Hard rules
 - Never put keys or tokens in code, files, logs or commits. Use the environment variables that are already set.
@@ -89,7 +75,7 @@ Every click must be saved with its history.
 - Keep the UI simple and clean. Use whatever framework the deploy skill expects.
 - Only edit: `closecall/app/`, `closecall/status/app.md`, `closecall/pitch.md`, `closecall/docs/demo.md`, `closecall/.gitignore`. **Never edit `closecall/pipeline/`, `closecall/labels/` or `closecall/results.json`.**
 
-### Shared contract (Sebi's agent writes the first two tables and results.json)
+### Shared contract (Teammate 1's agent writes the first two tables and results.json)
 **Tables in the team VAST database**
 - `closecall_candidates`: segment_id, camera_id, query, search_score, has_person, has_vehicle, passed_yolo, created_at
 - `closecall_verdicts`: segment_id, camera_id, start_time, end_time, playback_link, yolo_objects, verdict, type, severity, when_in_clip, reason, final_answer, prompt_version, created_at
@@ -98,10 +84,10 @@ Every click must be saved with its history.
 **Allowed values:** verdict and final_answer are each one of `CLOSE_CALL`, `NO_CONFLICT`, `CANT_TELL`.
 
 **Files**
-- `closecall/notes/schema.md` — Sebi's agent writes the real table and field names here around 9:50. Read it.
+- `closecall/notes/schema.md` — Teammate 1's agent writes the real table and field names here around 9:50. Read it.
 - `closecall/results.json` — shaped like this:
   `{"generated_at": "...", "n_test": 0, "kappa": 0.0, "versions": [{"name": "...", "precision": {"value": 0.0, "low": 0.0, "high": 0.0, "n": 0}, "recall": {...}, "coverage": {...}}]}`
-- `closecall/status/app.md` (yours) and `closecall/status/pipeline.md` (Sebi's)
+- `closecall/status/app.md` (yours) and `closecall/status/pipeline.md` (Teammate 1's)
 
 ### Tasks
 
@@ -110,13 +96,13 @@ Every click must be saved with its history.
 - Create `app/`, `docs/` and `status/` if they're missing.
 - Add a `.gitignore` covering `.env`, key and secret files, `__pycache__`, data dumps and video files.
 - Create `status/app.md`, and write `pitch.md` with the pitch text below.
-- Commit and push. Git may ask for credentials → **STOP-AND-ASK**: Grant types them.
+- Commit and push. Git may ask for credentials → **STOP-AND-ASK**: Teammate 2 types them.
 - **Done when:** the push succeeds.
 
 **A2 — Prove the app can go online (9:50).**
 - Read the deploy skill to see which framework it expects.
 - Make the simplest app in `app/` that shows a page titled **CloseCall**.
-- Deploy it with `/deploy-app-no-registry` and tell Grant how to open it (workshop.thecosmoslabs.com → App).
+- Deploy it with `/deploy-app-no-registry` and tell Teammate 2 how to open it (workshop.thecosmoslabs.com → App).
 - **Done when:** the page loads.
 
 **A3 — Decisions table (10:00).**
@@ -174,7 +160,7 @@ Every click must be saved with its history.
 - **3:15:** feature freeze — only fixes and redeploys.
 
 ### Fallbacks
-- **Deploy fails:** run the app on the build machine, open it in the machine's browser, and tell Grant to screen-record it.
+- **Deploy fails:** run the app on the build machine, open it in the machine's browser, and tell Teammate 2 so the demo can be screen-recorded there.
 - **Playback can't be embedded:** show a link or the segment's time range instead.
 - **Database write fails:** also append each decision to `app/decisions_backup.jsonl` so the demo still works, and note it in the status file.
 
@@ -217,27 +203,22 @@ clips; Cosmos can misjudge fast, dark or hidden scenes, so unclear clips go to a
 ```
 
 **Demo script (3 minutes)**
-- 0:00 **Sebi:** "Cities fix dangerous streets after someone gets hurt. Near misses are the early warning, but nobody can watch thousands of hours of fleet video. CloseCall does."
-- 0:30 **Grant:** Review tab → open a real clip → show Cosmos's verdict and reason → type a reason → **Approve** → Decision log shows the saved record: who, when, which prompt version.
-- 1:20 **Grant:** show an "Unclear — needs a person" clip: "When the video can't settle it, CloseCall says so instead of guessing."
-- 1:40 **Sebi:** Accuracy tab: "On N clips we labeled by hand, search alone was right P0% of the time. With our checks it's P%, give or take R, and it says can't tell on C%."
-- 2:20 **Sebi:** Data & Limits tab: "No faces, no plates, no tracking. Places and patterns, not people."
-- 2:40 **Grant:** "Next: a pilot with one city fleet. The same engine helps delivery fleets coach drivers."
-
-**Labeling rules**
-- **CLOSE_CALL:** a person in or entering the road comes within about a car length of a moving vehicle, or someone has to react suddenly.
-- **NO_CONFLICT:** the person is on the sidewalk or far away, the car is stopped, or there's plenty of room.
-- **CANT_TELL:** hidden, dark or blurry, or the clip ends before you can see what happens.
-- Label without looking at any AI output.
+- 0:00 **Teammate 1:** "Cities fix dangerous streets after someone gets hurt. Near misses are the early warning, but nobody can watch thousands of hours of fleet video. CloseCall does."
+- 0:30 **Teammate 2:** Review tab → open a real clip → show Cosmos's verdict and reason → type a reason → **Approve** → Decision log shows the saved record: who, when, which prompt version.
+- 1:20 **Teammate 2:** show an "Unclear — needs a person" clip: "When the video can't settle it, CloseCall says so instead of guessing."
+- 1:40 **Teammate 1:** Accuracy tab: "On N clips we labeled by hand, search alone was right P0% of the time. With our checks it's P%, give or take R, and it says can't tell on C%."
+- 2:20 **Teammate 1:** Data & Limits tab: "No faces, no plates, no tracking. Places and patterns, not people."
+- 2:40 **Teammate 2:** "Next: a pilot with one city fleet. The same engine helps delivery fleets coach drivers."
 
 ---
 
 ## Part C — Optional helper agent (second terminal, start at 2:30 PM)
 
 Open a second terminal tab, type `cd ~/vast-builders-challenge` and `agent`, then paste:
-> Read closecall/agents/GRANT.md Part C and do it.
+> Read closecall/agents/TEAMMATE2.md Part C and do it.
 
-**Brief for the helper agent:** You are the Submission helper for team CloseCall. You may only create or edit files in `closecall/docs/`. Never touch app code, pipeline code or database tables. Pull before you start and push after each item.
-1. Write `docs/submission.md` with every submission field ready to paste: project name, one-paragraph description (from `pitch.md`), the tools-used list from Grant's run sheet, the repo link, and a blank for the video link.
+**Brief for the helper agent:** You are the Submission helper for team CloseCall. You may only create or edit files in `closecall/docs/`. Never touch app code, pipeline code or database tables. Pull before you start and push after each item. Teammate 4 submits the project using these files.
+1. Write `docs/submission.md` with every submission field ready to paste: project name, one-paragraph description (from `pitch.md`), the tools-used list below, the repo link (github.com/Sebilopez1/closecall), and a blank for the video link.
+   Tools used: NVIDIA Cosmos Reason (via the VAST video pipeline) to check each clip · Cosmos Embed + VAST semantic search to find moments · YOLO11 for person and vehicle detection · VAST DataEngine and VastDB as the system of record · W&B Weave for evaluation and tracing · CoreWeave GPUs hosting the models and our app · Cursor.
 2. Write `docs/judge_qa.md`: 8 likely judge questions with 2-sentence answers, using real numbers from `results.json` once it exists. Cover: accuracy, why not just trust the AI, do near misses matter, who would use it, what we built versus what was provided, privacy, what happens when it's wrong, what's next.
 3. Check every link in `README.md` and `docs/` and report any broken ones.
