@@ -1,8 +1,8 @@
-# CloseCall — Sebi's file
+# CloseCall — Teammate 1: Pipeline (find, check, score)
 
-Real-Time Video Agents Hack NYC · Friday, October 9, 2026 · build starts 9:30 AM · submit by 4:30 PM ET
+Real-Time Video Agents Hack NYC · build 9:30 AM · submit by 4:30 PM ET
 
-- **Part A** is for you (Sebi). The agent ignores it.
+- **Part A** is for you (Teammate 1). The agent ignores it.
 - **Part B** is the brief your build agent follows on its own, start to finish.
 - **Part C** is an optional second agent you can start at 1:00 PM in another terminal.
 
@@ -10,16 +10,11 @@ Real-Time Video Agents Hack NYC · Friday, October 9, 2026 · build starts 9:30 
 
 ## Part A — Your run sheet (human only)
 
-**Before 8:30, on your laptop or phone**
-- ✗ On github.com, create a new **public** repository called `closecall` with a README.
-- ✗ In the repo: **Add file → Create new file**, type the name `agents/SEBI.md`, paste this whole file, commit. Do the same for `agents/GRANT.md`.
-- ✗ **Settings → Collaborators → Add people** → add Grant's GitHub username.
-- ✗ Make a GitHub token: **Settings → Developer settings → Personal access tokens → Tokens (classic) → Generate new token (classic)**. Note: "closecall hackathon". Expiration: 7 days. Scope: tick **repo**. Copy it into your notes app. (Revoke it after the event.)
-- ✗ Send Grant the `GRANT.md` file and tell him to accept your GitHub invite and make his own classic token the same way.
+**Before the build**
+- ✗ Make a GitHub token so your build machine can save code: **Settings → Developer settings → Personal access tokens → Tokens (classic) → Generate new token (classic)**. Expiration: 7 days. Scope: tick **repo**. Copy it into your notes. (Revoke it after the event.)
 
-**At the event**
-- ✗ 8:15 Arrive with laptop, charger and photo ID.
-- ✗ 8:30 Get the passcode → open your build machine → pick the **same team number as Grant** (you only get one choice) → sign into Cursor with the email you applied with → check requests show "Free".
+**Build day**
+- ✗ Open your build machine with the event passcode → pick the **same team number as Teammate 2** (you only get one choice) → sign into Cursor with the email you applied with → check requests show "Free".
 - ✗ 9:30 In the build machine terminal, type each line:
   ```
   cd ~/vast-builders-challenge
@@ -28,29 +23,30 @@ Real-Time Video Agents Hack NYC · Friday, October 9, 2026 · build starts 9:30 
   /model
   ```
   Pick **Auto Balance**, then paste this as your first message:
-  > Read closecall/agents/SEBI.md completely, then carry out Part B autonomously, start to finish. Only stop where it says STOP-AND-ASK.
+  > Read closecall/agents/TEAMMATE1.md completely, then carry out Part B autonomously, start to finish. Only stop where it says STOP-AND-ASK.
 - ✗ If the agent asks permission for every command, choose the option that always allows commands for this session.
 - ✗ When git asks for a username and password: type your GitHub username, and paste the **token** as the password — in the terminal, never in the agent chat.
+- ✗ ~10:15 When the agent writes **LABELS READY**, tell Teammates 3 and 4 to start labeling.
 - ✗ ~10:25 The agent asks before re-checking clips with Cosmos. Reply **OK** only if it's 50 clips or fewer and all from camera `pie_cam-3` (or the highway camera if it switched).
-- ✗ 10:30–11:00 Label clips 1–40 in `closecall/labels/labels_sebi.csv` using the rules at the bottom of this file. Don't look at the AI's answers. Then in the terminal: `cd ~/vast-builders-challenge/closecall && git add -A && git commit -m "sebi labels" && git push`
-- ✗ ~11:20 When the agent writes **VERDICTS READY**, tell Grant.
+- ✗ ~11:20 When the agent writes **VERDICTS READY**, tell Teammate 2.
 - ✗ 12:30 Checkpoint: one close call went found → checked → approved → saved. If not, tell the agent: *"We're behind. Apply the 12:30 scope cut."*
-- ✗ 1:00 Make sure Grant pushed his labels, then tell the agent: *"Labels are in. Continue with P7."*
-- ✗ 3:15 Feature freeze. 3:45 Help Grant submit. 4:15 Rehearse the pitch twice.
+- ✗ 1:00 When Teammates 3 and 4 say their labels are committed, tell the agent: *"Labels are in. Continue with P7."*
+- ✗ ~1:45 Review the agent's 5 worst mistakes together with Teammate 3.
+- ✗ 3:15 Feature freeze.
 
 ---
 
 ## Part B — Agent brief: Pipeline agent
 
 ### Who you are
-You are the **Pipeline agent** for team CloseCall at a one-day hackathon. Your human is **Sebi**. On another build machine, **Grant's App agent** builds the web app. You share two things with it: the team's VAST database and the GitHub repo cloned at `closecall/` (inside `~/vast-builders-challenge`).
+You are the **Pipeline agent** for team CloseCall at a one-day hackathon. Your human is **Teammate 1**. On another build machine, **Teammate 2's App agent** builds the web app. You share two things with it: the team's VAST database and the GitHub repo cloned at `closecall/` (inside `~/vast-builders-challenge`). Teammates 3 and 4 have no build machine; they write the human labels.
 
 ### Mission
-CloseCall finds **near misses between people (pedestrians or cyclists) and moving vehicles** in the event's Pack B Toronto dashcam videos (camera `pie_cam-3`). You build the part that **finds** candidate clips, **checks** them with Cosmos, **decides** a final answer per clip, and **scores** how often the system is right against human labels. Grant's app lets a person approve or reject each one.
+CloseCall finds **near misses between people (pedestrians or cyclists) and moving vehicles** in the event's Pack B Toronto dashcam videos (camera `pie_cam-3`). You build the part that **finds** candidate clips, **checks** them with Cosmos, **decides** a final answer per clip, and **scores** how often the system is right against human labels. Teammate 2's app lets a person approve or reject each one.
 
 ### How to work
 1. Before writing any code, read `README.md`, `ARCHITECTURE_REFERENCE.md` (if present) and every `SKILL.md` under `.cursor/skills/` (especially `ingest/` and `retrieval/`). Use those skills and their APIs. Never invent APIs.
-2. Do tasks **P1 → P9 in order without waiting for Sebi between tasks.** For each task:
+2. Do tasks **P1 → P9 in order without waiting for Teammate 1 between tasks.** For each task:
    - write a 3-bullet plan,
    - build it,
    - run it on 5 real clips and look at the output,
@@ -58,37 +54,37 @@ CloseCall finds **near misses between people (pedestrians or cyclists) and movin
    - `git pull --rebase`, then commit and push,
    - append one line to `closecall/status/pipeline.md`: `HH:MM ET — P# done — <one-line result>`.
 3. At the start of each task, check the time with `TZ=America/New_York date` and apply the **scope cuts** below if you're behind.
-4. **STOP-AND-ASK** (stop and wait for Sebi) only when:
+4. **STOP-AND-ASK** (stop and wait for Teammate 1) only when:
    - (a) you're about to re-ingest anything — show the exact segment list and wait for "OK";
    - (b) you'd delete, drop or overwrite any table or data;
    - (c) git asks for credentials;
    - (d) you're stuck for 10+ minutes after two fix attempts — summarize the problem and offer two options;
    - (e) an action would touch anything outside `closecall/` or our own `closecall_*` tables.
-5. If something breaks in the environment: run the starter-kit health check ("run a git pull", then "check that everything is working"). If it's still broken, use `/ask-cosmos` and tell Sebi.
+5. If something breaks in the environment: run the starter-kit health check ("run a git pull", then "check that everything is working"). If it's still broken, use `/ask-cosmos` and tell Teammate 1.
 
 ### Hard rules
 - Never put keys or tokens in code, files, logs or commits. Use the environment variables that are already set (the `WANDB_` keys are preset).
 - Never describe or store faces, clothing or license plates. No identifying or tracking individuals.
 - Times always come from video metadata, never from model text.
-- Re-ingest at most 50 segments, and only after Sebi says OK. Never re-ingest whole packs.
+- Re-ingest at most 50 segments, and only after Teammate 1 says OK. Never re-ingest whole packs.
 - Cache every model or pipeline result keyed by (segment_id, prompt_version). Never request the same answer twice.
 - Plain Python, small functions, clear names. Call `weave.init("closecall")` and wrap main functions with `@weave.op`.
 - Only edit: `closecall/pipeline/`, `closecall/labels/`, `closecall/notes/`, `closecall/status/pipeline.md`, `closecall/results.json`, and `closecall/README.md` (in P9 only). **Never edit `closecall/app/`.**
 
-### Shared contract (Grant's agent depends on these exact names)
+### Shared contract (Teammate 2's agent depends on these exact names)
 **Tables in the team VAST database**
 - `closecall_candidates`: segment_id, camera_id, query, search_score, has_person, has_vehicle, passed_yolo, created_at
 - `closecall_verdicts`: segment_id, camera_id, start_time, end_time, playback_link, yolo_objects, verdict, type, severity, when_in_clip, reason, final_answer, prompt_version, created_at
-- `closecall_decisions` (Grant's agent creates it; read-only for you): decision_id, segment_id, action, reason, reviewer, verdict_at_decision, prompt_version, decided_at
+- `closecall_decisions` (Teammate 2's agent creates it; read-only for you): decision_id, segment_id, action, reason, reviewer, verdict_at_decision, prompt_version, decided_at
 
 **Allowed values:** verdict and final_answer are each one of `CLOSE_CALL`, `NO_CONFLICT`, `CANT_TELL`.
 
 **Files**
 - `closecall/notes/schema.md` — the real table and field names you discover in P1
-- `closecall/labels/labels_sebi.csv` (clips 1–40) and `closecall/labels/labels_grant.csv` (clips 21–60)
+- `closecall/labels/labels_teammate3.csv` (clips 1–40) and `closecall/labels/labels_teammate4.csv` (clips 21–60)
 - `closecall/results.json` — shaped like this:
   `{"generated_at": "...", "n_test": 0, "kappa": 0.0, "versions": [{"name": "...", "precision": {"value": 0.0, "low": 0.0, "high": 0.0, "n": 0}, "recall": {...}, "coverage": {...}}]}`
-- `closecall/status/pipeline.md` (yours) and `closecall/status/app.md` (Grant's)
+- `closecall/status/pipeline.md` (yours) and `closecall/status/app.md` (Teammate 2's)
 
 ### Tasks
 
@@ -98,7 +94,7 @@ CloseCall finds **near misses between people (pedestrians or cyclists) and movin
 - find the real table and field names for segment id, camera, start/end time, description, YOLO objects and playback link;
 - show 5 example `pie_cam-3` segments with their description and YOLO objects.
 
-Write `closecall/notes/schema.md` with the real names and how a person opens a clip in the build machine's browser.
+Write `closecall/notes/schema.md` with the real names and how a person opens a clip in a browser (both on the build machine and, if possible, from a laptop at workshop.thecosmoslabs.com).
 - **Pack switch:** if `pie_cam-3` has fewer than about 40 segments, or its descriptions rarely mention people near vehicles, switch to the highway pack's camera(s). Note the switch in `schema.md` and the status file; everything else stays the same.
 - **Done when:** `schema.md` is pushed.
 
@@ -111,10 +107,10 @@ Write `closecall/notes/schema.md` with the real names and how a person opens a c
 
 **P3 — Label sheets (10:15).** Create `pipeline/label_sheet.py`:
 - Take the top 30 hits that passed YOLO plus 30 random segments from the same camera that are not hits. Shuffle them together and number them 1–60.
-- Write `labels/labels_sebi.csv` (clips 1–40) and `labels/labels_grant.csv` (clips 21–60), with columns `number, segment_id, how_to_view, label`. `label` is blank. Don't include any model output.
+- Write `labels/labels_teammate3.csv` (clips 1–40) and `labels/labels_teammate4.csv` (clips 21–60), with columns `number, segment_id, how_to_view, label`. `label` is blank. Don't include any model output. Teammates 3 and 4 fill them in through GitHub's web editor, so keep each row on one line with no extra commas inside fields.
 - Write `labels/key.csv` (number → which list the clip came from) for scoring only.
 - Copy the labeling rules from the bottom of this file into `labels/README.md`.
-- Push, then write status line: `LABELS READY — Sebi 1–40, Grant 21–60`.
+- Push, then write status line: `LABELS READY — Teammate 3: clips 1–40, Teammate 4: clips 21–60`.
 - **Done when:** both files are pushed and their `how_to_view` entries open a clip.
 
 **P4 — Check candidates with Cosmos (10:25).**
@@ -138,7 +134,7 @@ Write `closecall/notes/schema.md` with the real names and how a person opens a c
 
 **P7 — Score it (1:00).** Create `pipeline/evaluate.py`.
 - First `git pull`. If either labels file still has blanks, build and test everything with a temporary fake label file, then **STOP-AND-ASK**: "Labels incomplete: N blanks."
-- **Final human label:** Sebi's label for clips 1–40, Grant's for 41–60. **Tuning set** = clips 1–30, **test set** = clips 31–60. Report the test set only.
+- **Final human label:** Teammate 3's label for clips 1–40, Teammate 4's for 41–60. **Tuning set** = clips 1–30, **test set** = clips 31–60. Report the test set only.
 - Clips labeled `CANT_TELL` by humans are left out of precision and recall; report how many there were.
 - Each version predicts CLOSE_CALL, NO_CONFLICT or CANT_TELL (abstain) for each clip:
   - **A — Search only:** any search hit = CLOSE_CALL; not a hit = NO_CONFLICT.
@@ -149,7 +145,7 @@ Write `closecall/notes/schema.md` with the real names and how a person opens a c
   - recall = correct CLOSE_CALLs ÷ human CLOSE_CALLs
   - coverage = clips answered (not CANT_TELL) ÷ all test clips
   - Give each a 95% Wilson interval (z = 1.96) and its n.
-- Compute Cohen's kappa between the raw Sebi and Grant labels on clips 21–40.
+- Compute Cohen's kappa between the raw Teammate 3 and Teammate 4 labels on clips 21–40.
 - Log a Weave Evaluation named `closecall-v1`. Write `closecall/results.json`.
 - Write status line: `RESULTS READY`.
 - **Fallback:** if Weave fails, compute the metrics locally anyway and add `"note": "Weave unavailable"` to `results.json`.
@@ -210,7 +206,7 @@ answer CANT_TELL. Do not describe anyone's face, clothing or license plate.
 ## Part C — Optional helper agent (second terminal, start at 1:00 PM)
 
 Open a second terminal tab, type `cd ~/vast-builders-challenge` and `agent`, then paste:
-> Read closecall/agents/SEBI.md Part C and do it.
+> Read closecall/agents/TEAMMATE1.md Part C and do it.
 
 **Brief for the helper agent:** You are the Docs and QA helper for team CloseCall. You may only create or edit files in `closecall/docs/` and `closecall/notes/`. Never touch pipeline code, app code or database tables. Pull before you start and push after each item.
 1. Write `docs/architecture.md`: a short explanation plus a Mermaid diagram of the flow — dashcam clips → YOLO + Cosmos descriptions (provided pipeline) → find candidates → Cosmos check → final answer → approve/reject app → decisions table → evaluation. Include the three tables from the shared contract in Part B.
