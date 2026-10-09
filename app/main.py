@@ -47,7 +47,7 @@ LOCATIONS = {"nyc_streets_cam-1": "Walker St, New York (work zone)", "nyc_street
              "sf_streets_cam-5": "San Francisco intersection 5", "pie_cam-3": "Toronto (car dashcam)",
              "nyc_bike_gopro-1": "New York (bike camera)"}
 PER_CAM = int(os.environ.get("CLOSECALL_PER_CAM", "12"))      # clips kept per location
-VERSION = "city_v2"
+VERSION = "city_v3"
 CUTOFF = 5.0          # a danger score of 5.0 or more counts as a close call (for people and for the AI)
 
 RIDER_QUERIES = [
@@ -521,7 +521,8 @@ def observations(c, a, best):
         out.append({"type": "cyclist", "text": rider_warning(best), "gap_m": gap, "t": t})
     elif best["risk"] > 0 and gap is not None and gap <= 1.5:
         who = "a person in the work zone" if workzone else ("a cyclist" if a.get("who_at_risk") == "cyclist" else "a person on foot")
-        txt = f"{best.get('veh', 'Vehicle')} within {'less than 0.2' if gap < 0.2 else f'{gap:.1f}'} m of {who}"
+        # street cameras can't resolve less than about half a metre between two boxes, so don't claim it
+        txt = f"{best.get('veh', 'Vehicle')} {'within half a metre of' if gap < 0.5 else f'about {gap:.1f} m from'} {who}"
         out.append({"type": "work_zone" if workzone else ("cyclist" if a.get("who_at_risk") == "cyclist" else "near_miss"),
                     "text": txt, "gap_m": gap, "t": t})
     for typ, pat, text in CAPTION_OBS:
@@ -784,8 +785,11 @@ def hotspots():
         a = c.get("analysis") or {}
         cam = c.get("camera_id") or "?"
         h = by.setdefault(cam, {"camera_id": cam, "location": a.get("location") or cam, "mode": a.get("camera_mode"),
-                                "clips": 0, "close_calls": 0, "observations": {}, "closest_m": None, "worst": None})
+                                "clips": 0, "close_calls": 0, "observations": {}, "closest_m": None, "worst": None,
+                                "within_half_m": 0})
         h["clips"] += 1
+        if any(o.get("gap_m") is not None and o["gap_m"] <= 0.5 for o in a.get("observations") or []):
+            h["within_half_m"] += 1
         if a.get("verdict") == "CLOSE_CALL":
             h["close_calls"] += 1
         for o in a.get("observations") or []:
