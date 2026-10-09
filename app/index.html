@@ -401,9 +401,9 @@ async function loadHotspots() {
   const r = await api('api/hotspots');
   const rows = r.locations || [];
   $('#hotspots').innerHTML = rows.length ? `<p class="muted">Every place CloseCall scanned, worst first. Close calls score 5.0 or more out of 10; gaps are measured from the video.</p>
-    <table class="hot"><tr><th>Place</th><th>Clips</th><th>Close calls</th><th>What we see most</th><th>Closest measured gap</th><th>Worst clip</th></tr>
+    <table class="hot"><tr><th>Place</th><th>Clips</th><th>Close calls</th><th>What we see most</th><th>Vehicle within 0.5 m of a person</th><th>Worst clip</th></tr>
     ${rows.map(h => `<tr><td><b>${esc(h.location)}</b><div class="muted">${esc(h.camera_id)} · ${esc(MODE[h.mode] || '')}</div></td><td>${h.clips}</td><td><b>${h.close_calls}</b></td>
-      <td>${h.observations.slice(0, 3).map(([k, n]) => `${esc(k)}: ${n}`).join('<br>') || '—'}</td><td>${h.closest_m != null ? esc(gapTxt(h.closest_m)) : '—'}</td>
+      <td>${h.observations.slice(0, 3).map(([k, n]) => `${esc(k)}: ${n}`).join('<br>') || '—'}</td><td>${h.within_half_m} of ${h.clips} clips</td>
       <td>${h.worst ? `<span class="score" style="background:${scoreCol(h.worst.score)}">${esc(scoreTxt(h.worst.score))}</span>${esc(h.worst.text || '')} <button class="btn" data-open="${h.worst.id}">Open</button>` : '—'}</td></tr>`).join('')}</table>` :
     '<p class="muted">No places scanned yet.</p>';
   document.querySelectorAll('#hotspots [data-open]').forEach(b => b.onclick = () => {
