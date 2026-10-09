@@ -20,6 +20,17 @@ APP_HOST="video-lab-team-${TEAM_N}.cosmos.vastdata.com"
 APP_NAME=closecall
 APP_PORT=8080
 CAMERA="${CLOSECALL_CAMERA:-}"
+# Pods can't always resolve the VSS hostname that this machine knows (it may live in /etc/hosts here),
+# so pin it inside the pod with hostAliases.
+VSS_HOST=$(echo "$INGRESS_URL" | sed -E 's#^[a-z]+://##; s#[/:].*$##')
+VSS_IP=$(getent hosts "$VSS_HOST" | awk '{print $1; exit}' || true)
+HOST_ALIASES=""
+if [ -n "$VSS_IP" ]; then
+  HOST_ALIASES="      hostAliases:
+      - ip: \"$VSS_IP\"
+        hostnames: [\"$VSS_HOST\"]"
+fi
+echo "== VSS backend host $VSS_HOST -> ${VSS_IP:-not in /etc/hosts}"
 
 echo "== namespace $NS, host $APP_HOST"
 kubectl -n "$NS" create configmap "${APP_NAME}-code" --from-file=app \
@@ -43,6 +54,7 @@ spec:
     metadata:
       labels: {app: ${APP_NAME}}
     spec:
+${HOST_ALIASES}
       containers:
       - name: app
         image: python:3.12-slim
@@ -111,6 +123,7 @@ if [ "${RESTART:-0}" = "1" ]; then
 fi
 kubectl -n "$NS" rollout status deploy/"$APP_NAME" --timeout=180s
 kubectl -n "$NS" get pods -l app="$APP_NAME" -o wide
+echo "== services in $NS:"; kubectl -n "$NS" get svc 2>/dev/null | head -15 || true
 echo "== health:"; curl -sS -m 10 "http://${APP_HOST}/app/health" || echo "(health check from this machine failed; check the App button)"
 echo
 echo "== code changes reach the running app in about a minute (no restart, saved decisions are kept)."
