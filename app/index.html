@@ -65,6 +65,11 @@
   .toast { position: fixed; bottom: 18px; right: 18px; background: var(--panel2); border: 1px solid var(--accent); padding: 10px 14px; border-radius: 10px; display: none; }
   .legend { display: flex; gap: 12px; font-size: 12px; color: var(--muted); margin-top: 6px; flex-wrap: wrap; }
   .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 4px; vertical-align: -1px; }
+  .score { display: inline-block; min-width: 38px; text-align: center; padding: 1px 6px; border-radius: 6px; color: #111; font-weight: 700; margin-right: 6px; }
+  .rate { display: flex; align-items: center; gap: 14px; margin: 12px 0 6px; max-width: 860px; }
+  .rate input { flex: 1; accent-color: #f5a524; }
+  .rate b { font-size: 30px; min-width: 64px; text-align: right; }
+  .quick .btn { min-width: 38px; padding: 5px 8px; }
 </style>
 </head>
 <body>
@@ -101,7 +106,7 @@
 
   <section id="tab-label" class="hidden">
     <div class="labelstage">
-      <p class="muted">Blind labeling: you only see the clip, never the AI's answer. Two people label the same clips so we can measure agreement.</p>
+      <p class="muted">Blind rating: you only see the clip, never the AI's score. Rate each clip from 0 to 10; two people rate the same clips so we can measure agreement.</p>
       <div class="row"><label>Your name <input id="labeler" placeholder="e.g. labeler-a"></label> <span id="lprogress" class="muted"></span></div>
       <div id="lstage" style="margin-top:12px"></div>
     </div>
@@ -112,7 +117,7 @@
   <section id="tab-limits" class="hidden">
     <div class="center">
       <p>CloseCall looks at places and patterns, never people: no face recognition, no license plates, no tracking anyone. Raw video stays in VAST; only events, decisions and labels are saved. Every action is approved by a person and logged.</p>
-      <p><b>How it decides.</b> NVIDIA Cosmos describes each clip and YOLO11 marks every car, bus, truck, bike and person in each frame. On the bike camera the rider is the camera: CloseCall follows each vehicle from frame to frame and uses its real size as a ruler (a car is about 1.5 m tall, a bus about 3 m) to estimate how far ahead it is and how much space it left beside the rider, in metres. A vehicle within about half a metre of the rider, less than 3 m ahead, is a close call; a big vehicle right alongside, too close to measure, goes to a person. On street and car cameras it checks how close vehicles come to anyone on a bike or on foot at the same depth, and whether Cosmos saw braking, swerving or a near miss.</p>
+      <p><b>How it decides.</b> NVIDIA Cosmos describes each clip and YOLO11 marks every car, bus, truck, bike and person in each frame. On the bike camera the rider is the camera: CloseCall follows each vehicle from frame to frame and uses its real size as a ruler (a car is about 1.5 m tall, a bus about 3 m) to estimate how far ahead it is and how much space it left beside the rider, in metres. Each clip gets a danger score from 0.0 to 10.0: a car about half a metre from the rider and under 2 m ahead scores about 7, one within 20 cm scores 10, and 5.0 and up counts as a close call. A big vehicle right alongside, too close to measure, scores 4.5 so a person takes a look. On street and car cameras it checks how close vehicles come to anyone on a bike or on foot at the same depth, and whether Cosmos saw braking, swerving or a near miss.</p>
       <p><b>Limits.</b> Distances come from one camera, so they're estimates (roughly ±30–50%): they assume a forward-facing camera and typical vehicle sizes, and long vehicles seen from the side can't be measured. Tested on a small hand-labeled set of New York bike-camera clips plus some street and dashcam clips. Cosmos and YOLO can miss fast, dark or hidden scenes, so unclear clips go to a person. Hazard tags (wires, holes, debris) are Cosmos's reading of the clip and aren't scored yet. Decisions are stored on the app's disk for the demo.</p>
     </div>
   </section>
@@ -127,7 +132,9 @@ const SEV = { high: 'var(--high)', medium: 'var(--medium)', low: 'var(--low)', n
 const SEVHEX = { high: '#e5484d', medium: '#f5a524', low: '#46a758', none: '#6b7079' };
 const THREAT = { close_pass: 'Close pass', opening_door: 'Opening door', turning_car: 'Turning car', bus_pulling_in: 'Bus pulling in', crossing_car: 'Car crossing path', braking: 'Hard braking', squeeze: 'Squeezing past', alongside: 'Vehicle alongside', too_close_ahead: 'Too close ahead', other: 'Vehicle too close', none: 'No threat' };
 const gapTxt = m => m == null ? '' : (m < 0.2 ? '<0.2' : m.toFixed(1)) + ' m';
-const VERDICT = { CLOSE_CALL: 'Close call', NO_CONFLICT: 'No conflict', CANT_TELL: 'Unclear — needs a person' };
+const VERDICT = { CLOSE_CALL: 'Close call (5.0+)', NO_CONFLICT: 'Below 5.0', CANT_TELL: 'No data — needs a person' };
+const scoreCol = v => v == null ? '#6b7079' : v >= 7.5 ? '#e5484d' : v >= 5 ? '#f5a524' : v >= 2 ? '#46a758' : '#6b7079';
+const scoreTxt = v => v == null ? '—' : Number(v).toFixed(1);
 const MODE = { rider: 'bike cam', dashcam: 'dashcam', fixed: 'street cam' };
 let clips = [], filter = 'all', current = null, det = null, raf = null;
 
@@ -157,7 +164,7 @@ async function poll() {
 async function loadClips() {
   const r = await api('api/clips');
   clips = r.clips || [];
-  clips.sort((a, b) => (b.analysis?.risk || 0) - (a.analysis?.risk || 0));
+  clips.sort((a, b) => (b.analysis?.score ?? -1) - (a.analysis?.score ?? -1));
   renderCounters(); renderList();
   if (!current && clips.length) select(clips[0].id);
 }
@@ -167,7 +174,7 @@ function renderCounters() {
   const hz = clips.filter(c => c.analysis?.hazard && c.analysis.hazard !== 'none').length;
   const wait = clips.filter(c => !c.decided && (c.analysis?.verdict !== 'NO_CONFLICT' || c.analysis?.hazard !== 'none')).length;
   api('api/decisions').then(d => {
-    const items = [[clips.length, 'clips checked'], [cc, 'close calls found'], [hz, 'hazards found'], [wait, 'waiting for review'], [d.decisions.length, 'decisions made']];
+    const items = [[clips.length, 'clips checked'], [cc, 'close calls (5.0+)'], [hz, 'hazards found'], [wait, 'waiting for review'], [d.decisions.length, 'decisions made']];
     $('#counters').innerHTML = items.map(([n, l]) => `<div class="counter"><b>${n}</b><span>${l}</span></div>`).join('');
   });
 }
@@ -188,9 +195,10 @@ function renderList() {
   const v = visible();
   $('#list').innerHTML = v.length ? v.map(c => {
     const a = c.analysis || {};
-    return `<div class="card ${current === c.id ? 'sel' : ''} ${c.decided ? 'done' : ''}" style="border-left-color:${SEV[a.severity] || SEV.none}" data-id="${c.id}">
-      <div class="t">${esc(a.verdict === 'NO_CONFLICT' ? 'No conflict' : THREAT[a.threat] || 'Clip')} ${a.hazard && a.hazard !== 'none' ? '· ⚠ ' + esc(a.hazard.replace('_', ' ')) : ''}</div>
-      <div class="m">${esc(MODE[a.camera_mode] || '')} · ${esc(a.who_at_risk === 'none' ? 'nobody at risk' : a.who_at_risk)} · ${esc(a.threat_side || 'none')} · ${esc(a.severity)}${a.clearance_m != null && a.verdict !== 'NO_CONFLICT' ? ' · gap ' + esc(gapTxt(a.clearance_m)) : ''} · ${esc(VERDICT[a.verdict] || '')}${c.decided ? ' · decided' : ''}</div>
+    const title = a.verdict === 'CANT_TELL' ? 'No data' : a.threat && a.threat !== 'none' ? (THREAT[a.threat] || 'Vehicle close') : 'Nothing close';
+    return `<div class="card ${current === c.id ? 'sel' : ''} ${c.decided ? 'done' : ''}" style="border-left-color:${scoreCol(a.score)}" data-id="${c.id}">
+      <div class="t"><span class="score" style="background:${scoreCol(a.score)}">${esc(scoreTxt(a.score))}</span>${esc(title)} ${a.hazard && a.hazard !== 'none' ? '· ⚠ ' + esc(a.hazard.replace('_', ' ')) : ''}</div>
+      <div class="m">${esc(MODE[a.camera_mode] || '')} · ${esc(a.who_at_risk === 'none' ? 'nobody at risk' : a.who_at_risk)}${a.threat_side && a.threat_side !== 'none' ? ' · ' + esc(a.threat_side) : ''}${a.clearance_m != null && a.threat !== 'none' ? ' · gap ' + esc(gapTxt(a.clearance_m)) : ''}${c.decided ? ' · decided' : ''}</div>
     </div>`;
   }).join('') : '<p class="muted">No clips here yet.</p>';
   document.querySelectorAll('#list .card').forEach(el => el.onclick = () => select(el.dataset.id));
@@ -224,7 +232,7 @@ async function select(id) {
         <div class="vid"><video id="video" src="${BASE}video?id=${id}" controls muted playsinline></video><canvas id="overlay"></canvas></div>
         <div class="legend"><span><i style="background:#f0f0f0"></i>vehicle</span><span><i style="background:#3ad1ff"></i>cyclist</span><span><i style="background:#7ee787"></i>pedestrian</span><span><label><input type="checkbox" id="ov" checked> sensing overlay</label></span>${c.has_detections ? '' : '<span>no YOLO detections for this clip</span>'}</div>
         <div class="warn" style="color:${SEV[a.severity] || SEV.none}">${esc(a.warning || '')}</div>
-        <div><span class="pill">${esc(VERDICT[a.verdict] || a.verdict)}</span><span class="pill">at risk: ${esc(a.who_at_risk)}</span><span class="pill">threat: ${esc(THREAT[a.threat] || a.threat)}</span><span class="pill">side: ${esc(a.threat_side)}</span><span class="pill">severity: ${esc(a.severity)}</span>${a.clearance_m != null && a.verdict !== 'NO_CONFLICT' ? `<span class="pill">gap ≈ ${esc(gapTxt(a.clearance_m))}</span>` : ''}<span class="pill">camera: ${esc(c.camera_id || '?')} (${esc(MODE[a.camera_mode] || '')})</span>${a.hazard !== 'none' ? `<span class="pill">hazard: ${esc(a.hazard)}</span>` : ''}</div>
+        <div><span class="pill" style="background:${scoreCol(a.score)};color:#111;font-weight:700;border-color:transparent">danger ${esc(scoreTxt(a.score))} / 10</span><span class="pill">${esc(VERDICT[a.verdict] || a.verdict)}</span><span class="pill">at risk: ${esc(a.who_at_risk)}</span><span class="pill">threat: ${esc(THREAT[a.threat] || a.threat)}</span><span class="pill">side: ${esc(a.threat_side)}</span><span class="pill">severity: ${esc(a.severity)}</span>${a.clearance_m != null && a.threat !== 'none' ? `<span class="pill">gap ≈ ${esc(gapTxt(a.clearance_m))}</span>` : ''}<span class="pill">camera: ${esc(c.camera_id || '?')} (${esc(MODE[a.camera_mode] || '')})</span>${a.hazard !== 'none' ? `<span class="pill">hazard: ${esc(a.hazard)}</span>` : ''}</div>
         <div class="box" style="margin-top:10px"><h3>What Cosmos saw</h3><div class="caption">${esc(c.caption || '—')}</div>
           <div class="muted" style="font-size:12px;margin-top:6px">Found by: ${esc([...new Set(c.queries || [])].slice(0, 3).join(' · '))} · camera ${esc(c.camera_id || '?')}</div></div>
         <div class="box" style="margin-top:10px"><h3>Decision</h3>
@@ -378,18 +386,19 @@ function drawBev(cv, f) {
 
 async function loadLog() {
   const d = await api('api/decisions');
-  $('#logtable').innerHTML = d.decisions.length ? `<table><tr><th>When</th><th>Action</th><th>Reviewer</th><th>Verdict at decision</th><th>At risk / threat / side</th><th>Prompt</th><th>Reason</th></tr>${d.decisions.map(x => `<tr><td>${esc(x.decided_at)}</td><td>${esc(x.action)}</td><td>${esc(x.reviewer)}</td><td>${esc(VERDICT[x.verdict_at_decision] || x.verdict_at_decision)}</td><td>${esc(x.who_at_risk)} / ${esc(THREAT[x.threat] || x.threat)} / ${esc(x.threat_side)}</td><td>${esc(x.prompt_version)}</td><td>${esc(x.reason)}</td></tr>`).join('')}</table>` : '<p class="muted">No decisions yet. Approve or reject a clip on the Review tab.</p>';
+  $('#logtable').innerHTML = d.decisions.length ? `<table><tr><th>When</th><th>Action</th><th>Reviewer</th><th>Score</th><th>Verdict at decision</th><th>At risk / threat / side</th><th>Prompt</th><th>Reason</th></tr>${d.decisions.map(x => `<tr><td>${esc(x.decided_at)}</td><td>${esc(x.action)}</td><td>${esc(x.reviewer)}</td><td>${esc(scoreTxt(x.score_at_decision))}</td><td>${esc(VERDICT[x.verdict_at_decision] || x.verdict_at_decision)}</td><td>${esc(x.who_at_risk)} / ${esc(THREAT[x.threat] || x.threat)} / ${esc(x.threat_side)}</td><td>${esc(x.prompt_version)}</td><td>${esc(x.reason)}</td></tr>`).join('')}</table>` : '<p class="muted">No decisions yet. Approve or reject a clip on the Review tab.</p>';
 }
 
 function fmt(m) { return m && m.value != null ? `${Math.round(m.value * 100)}% (${Math.round(m.low * 100)}–${Math.round(m.high * 100)}%), n=${m.n}` : `—, n=${m?.n ?? 0}`; }
 async function loadAcc() {
   const r = await api('api/accuracy');
-  $('#acc').innerHTML = r.n_labeled ? `<table><tr><th>Version</th><th>Precision</th><th>Recall</th><th>Coverage</th></tr>${r.versions.map(v => `<tr><td>${esc(v.name)}</td><td>${fmt(v.precision)}</td><td>${fmt(v.recall)}</td><td>${fmt(v.coverage)}</td></tr>`).join('')}</table>
-    <p class="muted">Measured on ${r.n_labeled} hand-labeled clips (${r.human_cant_tell} the labelers marked "can't tell" are left out of precision and recall). Ranges are 95% Wilson intervals.${r.kappa ? ` Agreement between ${esc(r.kappa.labelers.join(' and '))}: Cohen's kappa ${r.kappa.kappa} on ${r.kappa.n} shared clips.` : ''}</p>` :
-    '<p class="muted">Results appear here once clips are labeled on the Label tab.</p>';
+  $('#acc').innerHTML = r.n_labeled ? `<table><tr><th>Version</th><th>Avg. difference from people (0–10)</th><th>Correlation</th><th>Same side of ${Number(r.cutoff).toFixed(1)}</th><th>Precision</th><th>Recall</th><th>Coverage</th></tr>${r.versions.map(v => `<tr><td>${esc(v.name)}</td><td>${v.mae ? v.mae.value.toFixed(1) + ' points, n=' + v.mae.n : '—'}</td><td>${v.corr != null ? v.corr : '—'}</td><td>${fmt(v.agreement)}</td><td>${fmt(v.precision)}</td><td>${fmt(v.recall)}</td><td>${fmt(v.coverage)}</td></tr>`).join('')}</table>
+    <p class="muted">Measured on ${r.n_labeled} clips people rated from 0 to 10 (${r.human_cant_tell} skipped as "can't judge" are left out). When two people rated a clip, their average counts. A clip is a close call at ${Number(r.cutoff).toFixed(1)} or more. Ranges are 95% Wilson intervals.${r.kappa ? ` ${esc(r.kappa.labelers.join(' and '))} both rated ${r.kappa.n} clips${r.kappa.mean_diff != null ? `; their scores differ by ${r.kappa.mean_diff} points on average` : ''}; Cohen's kappa at the ${Number(r.cutoff).toFixed(1)} line: ${r.kappa.kappa ?? '—'}.` : ''}</p>` :
+    '<p class="muted">Results appear here once clips are rated on the Label tab.</p>';
 }
 
 let lqueue = [];
+let lshown = null;
 async function loadLabel() {
   const who = $('#labeler').value.trim();
   try { if (!who && localStorage.getItem('cc_labeler')) $('#labeler').value = localStorage.getItem('cc_labeler'); } catch (e) {}
@@ -398,16 +407,26 @@ async function loadLabel() {
   try { localStorage.setItem('cc_labeler', name); } catch (e) {}
   const r = await api('api/label-queue?labeler=' + encodeURIComponent(name));
   lqueue = r.clips || [];
-  $('#lprogress').textContent = `${r.done} of ${r.total} labeled`;
+  $('#lprogress').textContent = `${r.done} of ${r.total} rated`;
   const c = lqueue[0];
-  if (!c) { $('#lstage').innerHTML = '<p>All clips labeled. Thank you!</p>'; return; }
+  if (!c) { lshown = null; $('#lstage').innerHTML = '<p>All clips rated. Thank you!</p>'; return; }
+  if (lshown === name + '|' + c.id && $('#lsave')) return;     // same clip already on screen: keep the rating in progress
+  lshown = name + '|' + c.id;
   $('#lstage').innerHTML = `<div class="vid" style="max-width:860px"><video src="${BASE}video?id=${c.id}" controls autoplay muted playsinline></video></div>
-    <p class="muted"><b>Close call</b> = a vehicle in traffic (not parked) comes within about an arm's length (half a metre) of the rider or of anyone else on a bike or on foot, or someone has to brake or swerve suddenly. Watch the whole clip; pick <b>Can't tell</b> if you can't judge it.</p>
-    <div class="row"><button class="btn big approve" data-l="CLOSE_CALL">Close call</button><button class="btn big" data-l="NO_CONFLICT">No conflict</button><button class="btn big reject" data-l="CANT_TELL">Can't tell</button></div>`;
-  document.querySelectorAll('#lstage [data-l]').forEach(b => b.onclick = async () => {
-    await api('api/label', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ clip_id: c.id, label: b.dataset.l, labeler: name }) });
+    <p class="muted">How dangerous is the closest moment for the rider, or anyone else on a bike or on foot? <b>0</b> = nothing near anyone · <b>5</b> = a vehicle in traffic within about an arm's length (half a metre), or someone has to brake or swerve · <b>10</b> = almost hit. Parked cars don't count. 5.0 and up counts as a close call.</p>
+    <div class="rate"><span class="muted">0</span><input type="range" id="lscore" min="0" max="10" step="0.1" value="5"><span class="muted">10</span><b id="lval">–</b></div>
+    <div class="row quick">${[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(n => `<button class="btn" data-q="${n}">${n}</button>`).join('')}</div>
+    <div class="row" style="margin-top:10px"><button class="btn big approve" id="lsave" disabled>Save rating</button><button class="btn big reject" id="lskip">Can't judge — skip</button><span class="muted">drag the slider or tap a number</span></div>`;
+  const sl = $('#lscore'), lv = $('#lval'), save = $('#lsave');
+  const setv = v => { sl.value = v; lv.textContent = Number(v).toFixed(1); lv.style.color = scoreCol(Number(v)); save.disabled = false; };
+  sl.oninput = () => setv(sl.value);
+  document.querySelectorAll('#lstage [data-q]').forEach(b => b.onclick = () => setv(b.dataset.q));
+  const send = async body => {
+    await api('api/label', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ clip_id: c.id, labeler: name, ...body }) });
     loadLabel();
-  });
+  };
+  save.onclick = () => { if (!save.disabled) send({ score: Number(sl.value) }); };
+  $('#lskip').onclick = () => send({ label: 'CANT_TELL' });
 }
 $('#labeler').addEventListener('change', loadLabel);
 
