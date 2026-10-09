@@ -811,7 +811,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_json(c.get("detections") if c else {"frames": []})
             if p == "/api/label-queue":
                 who = (q.get("labeler") or "").strip().lower()
-                done = {r["clip_id"] for r in read_jsonl("labels.jsonl") if r.get("labeler", "").lower() == who}
+                done = {r["clip_id"] for r in read_jsonl("labels.jsonl") if r.get("labeler", "").lower() == who
+                        and (r.get("score") is not None or r.get("label") == "CANT_TELL")}   # old 3-button labels: rate again
                 order = sorted(STATE["clips"], key=lambda c: c["id"])
                 return self.send_json({"clips": [public_clip(c, blind=True) for c in order if c["id"] not in done],
                                        "done": len(done), "total": len(order)})
