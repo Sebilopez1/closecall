@@ -112,8 +112,8 @@
   <section id="tab-limits" class="hidden">
     <div class="center">
       <p>CloseCall looks at places and patterns, never people: no face recognition, no license plates, no tracking anyone. Raw video stays in VAST; only events, decisions and labels are saved. Every action is approved by a person and logged.</p>
-      <p><b>How it decides.</b> NVIDIA Cosmos describes each clip and YOLO11 marks every car, bus, truck, bike and person in each frame. CloseCall measures, from the point of view of the person on the bike or on foot, how close each vehicle came (in person-heights; about 2.5 is one car length), which side it came from, and whether Cosmos saw braking, swerving or a near miss.</p>
-      <p><b>Limits.</b> Tested on a small hand-labeled set of street clips filmed from a car, standing in for a handlebar or helmet camera. Distances come from the camera image, so they're estimates. Cosmos and YOLO can miss fast, dark or hidden scenes, so unclear clips go to a person. Hazard tags (wires, holes, debris) are Cosmos's reading of the clip and aren't scored yet. Decisions are stored on the app's disk for the demo.</p>
+      <p><b>How it decides.</b> NVIDIA Cosmos describes each clip and YOLO11 marks every car, bus, truck, bike and person in each frame. On the bike camera the rider is the camera: CloseCall follows each vehicle from frame to frame and uses its real size as a ruler (a car is about 1.5 m tall, a bus about 3 m) to estimate how far ahead it is and how much space it left beside the rider, in metres. A vehicle within about half a metre of the rider, less than 3 m ahead, is a close call; a big vehicle right alongside, too close to measure, goes to a person. On street and car cameras it checks how close vehicles come to anyone on a bike or on foot at the same depth, and whether Cosmos saw braking, swerving or a near miss.</p>
+      <p><b>Limits.</b> Distances come from one camera, so they're estimates (roughly ±30–50%): they assume a forward-facing camera and typical vehicle sizes, and long vehicles seen from the side can't be measured. Tested on a small hand-labeled set of New York bike-camera clips plus some street and dashcam clips. Cosmos and YOLO can miss fast, dark or hidden scenes, so unclear clips go to a person. Hazard tags (wires, holes, debris) are Cosmos's reading of the clip and aren't scored yet. Decisions are stored on the app's disk for the demo.</p>
     </div>
   </section>
 </main>
@@ -125,7 +125,8 @@ const api = (p, opts) => fetch(BASE + p, opts).then(r => r.json());
 const $ = s => document.querySelector(s);
 const SEV = { high: 'var(--high)', medium: 'var(--medium)', low: 'var(--low)', none: 'var(--none)' };
 const SEVHEX = { high: '#e5484d', medium: '#f5a524', low: '#46a758', none: '#6b7079' };
-const THREAT = { close_pass: 'Close pass', opening_door: 'Opening door', turning_car: 'Turning car', bus_pulling_in: 'Bus pulling in', crossing_car: 'Car crossing path', braking: 'Hard braking', other: 'Vehicle too close', none: 'No threat' };
+const THREAT = { close_pass: 'Close pass', opening_door: 'Opening door', turning_car: 'Turning car', bus_pulling_in: 'Bus pulling in', crossing_car: 'Car crossing path', braking: 'Hard braking', squeeze: 'Squeezing past', alongside: 'Vehicle alongside', too_close_ahead: 'Too close ahead', other: 'Vehicle too close', none: 'No threat' };
+const gapTxt = m => m == null ? '' : (m < 0.2 ? '<0.2' : m.toFixed(1)) + ' m';
 const VERDICT = { CLOSE_CALL: 'Close call', NO_CONFLICT: 'No conflict', CANT_TELL: 'Unclear — needs a person' };
 const MODE = { rider: 'bike cam', dashcam: 'dashcam', fixed: 'street cam' };
 let clips = [], filter = 'all', current = null, det = null, raf = null;
@@ -189,7 +190,7 @@ function renderList() {
     const a = c.analysis || {};
     return `<div class="card ${current === c.id ? 'sel' : ''} ${c.decided ? 'done' : ''}" style="border-left-color:${SEV[a.severity] || SEV.none}" data-id="${c.id}">
       <div class="t">${esc(a.verdict === 'NO_CONFLICT' ? 'No conflict' : THREAT[a.threat] || 'Clip')} ${a.hazard && a.hazard !== 'none' ? '· ⚠ ' + esc(a.hazard.replace('_', ' ')) : ''}</div>
-      <div class="m">${esc(MODE[a.camera_mode] || '')} · ${esc(a.who_at_risk === 'none' ? 'nobody at risk' : a.who_at_risk)} · ${esc(a.threat_side || 'none')} · ${esc(a.severity)} · ${esc(VERDICT[a.verdict] || '')}${c.decided ? ' · decided' : ''}</div>
+      <div class="m">${esc(MODE[a.camera_mode] || '')} · ${esc(a.who_at_risk === 'none' ? 'nobody at risk' : a.who_at_risk)} · ${esc(a.threat_side || 'none')} · ${esc(a.severity)}${a.clearance_m != null && a.verdict !== 'NO_CONFLICT' ? ' · gap ' + esc(gapTxt(a.clearance_m)) : ''} · ${esc(VERDICT[a.verdict] || '')}${c.decided ? ' · decided' : ''}</div>
     </div>`;
   }).join('') : '<p class="muted">No clips here yet.</p>';
   document.querySelectorAll('#list .card').forEach(el => el.onclick = () => select(el.dataset.id));
@@ -223,7 +224,7 @@ async function select(id) {
         <div class="vid"><video id="video" src="${BASE}video?id=${id}" controls muted playsinline></video><canvas id="overlay"></canvas></div>
         <div class="legend"><span><i style="background:#f0f0f0"></i>vehicle</span><span><i style="background:#3ad1ff"></i>cyclist</span><span><i style="background:#7ee787"></i>pedestrian</span><span><label><input type="checkbox" id="ov" checked> sensing overlay</label></span>${c.has_detections ? '' : '<span>no YOLO detections for this clip</span>'}</div>
         <div class="warn" style="color:${SEV[a.severity] || SEV.none}">${esc(a.warning || '')}</div>
-        <div><span class="pill">${esc(VERDICT[a.verdict] || a.verdict)}</span><span class="pill">at risk: ${esc(a.who_at_risk)}</span><span class="pill">threat: ${esc(THREAT[a.threat] || a.threat)}</span><span class="pill">side: ${esc(a.threat_side)}</span><span class="pill">severity: ${esc(a.severity)}</span><span class="pill">camera: ${esc(c.camera_id || '?')} (${esc(MODE[a.camera_mode] || '')})</span>${a.hazard !== 'none' ? `<span class="pill">hazard: ${esc(a.hazard)}</span>` : ''}</div>
+        <div><span class="pill">${esc(VERDICT[a.verdict] || a.verdict)}</span><span class="pill">at risk: ${esc(a.who_at_risk)}</span><span class="pill">threat: ${esc(THREAT[a.threat] || a.threat)}</span><span class="pill">side: ${esc(a.threat_side)}</span><span class="pill">severity: ${esc(a.severity)}</span>${a.clearance_m != null && a.verdict !== 'NO_CONFLICT' ? `<span class="pill">gap ≈ ${esc(gapTxt(a.clearance_m))}</span>` : ''}<span class="pill">camera: ${esc(c.camera_id || '?')} (${esc(MODE[a.camera_mode] || '')})</span>${a.hazard !== 'none' ? `<span class="pill">hazard: ${esc(a.hazard)}</span>` : ''}</div>
         <div class="box" style="margin-top:10px"><h3>What Cosmos saw</h3><div class="caption">${esc(c.caption || '—')}</div>
           <div class="muted" style="font-size:12px;margin-top:6px">Found by: ${esc([...new Set(c.queries || [])].slice(0, 3).join(' · '))} · camera ${esc(c.camera_id || '?')}</div></div>
         <div class="box" style="margin-top:10px"><h3>Decision</h3>
@@ -279,9 +280,14 @@ function startOverlay() {
       const a = (clips.find(c => c.id === current) || {}).analysis || {};
       for (const o of f.objs) {
         const k = kindOf(o.label), [x1, y1, x2, y2] = o.box;
-        const col = (k === 'vehicle' && a.camera_mode === 'rider' && y2 - y1 > 0.3) ? (SEVHEX[a.severity] || KCOL[k]) : KCOL[k];
+        let col = KCOL[k], txt = o.label;
+        if (a.camera_mode === 'rider') {
+          const r = riderGeo(o);
+          if (r.own) continue;                                   // the rider's own arms and bike
+          if (r.danger) { col = dangerCol(r); txt += r.inPath ? ' ' + r.Z.toFixed(1) + ' m ahead' : ' gap ' + gapTxt(r.gapM); }
+        }
         g.strokeStyle = col; g.strokeRect(x1 * W, y1 * H, (x2 - x1) * W, (y2 - y1) * H);
-        g.fillStyle = col; g.fillText(o.label, x1 * W + 3, Math.max(12, y1 * H - 4));
+        g.fillStyle = col; g.fillText(txt, x1 * W + 3, Math.max(12, y1 * H - 4));
       }
     }
     drawBev(bev, f);
@@ -290,13 +296,60 @@ function startOverlay() {
   raf = requestAnimationFrame(draw);
 }
 
+// Bike cam: place every vehicle in metres around the rider, using its real size as a ruler (same as the server).
+const VH = { car: 1.5, suv: 1.7, van: 2.0, pickup: 1.8, bus: 3.0, truck: 3.0, motorcycle: 1.4, motorbike: 1.4, vehicle: 1.6 };
+function riderGeo(o) {
+  const AR = 16 / 9, k = kindOf(o.label), [x1, y1, x2, y2] = o.box, h = Math.max(1e-3, y2 - y1);
+  const Hm = k === 'vehicle' ? (VH[o.label] || 1.6) : 1.7, clipped = y2 >= 0.97 || y1 <= 0.01;
+  const wM = k === 'vehicle' ? (/bus|truck/.test(o.label) ? 2.5 : /motor/.test(o.label) ? 0.8 : 1.8) : 0.6;
+  const len = k === 'vehicle' ? ({ bus: 12, truck: 8, motorcycle: 2.2, motorbike: 2.2 }[o.label] || 4.5) : 0.6;
+  const own = (k !== 'vehicle' && y2 >= 0.95) || (k === 'vehicle' && y1 >= 0.85);
+  let Z = Hm / h, Xc;
+  if (x2 < 0.5) Xc = -(0.5 - x2) * AR * Hm / h - wM / 2;
+  else if (x1 > 0.5) Xc = (x1 - 0.5) * AR * Hm / h + wM / 2;
+  else Xc = ((x1 + x2) / 2 - 0.5) * AR * Hm / h;
+  if (clipped && k === 'vehicle') { Z = 0.5; Xc = Math.sign((x1 + x2) / 2 - 0.5) * (1.2 + wM / 2); }
+  const gapM = Math.max(0, Math.abs(Xc) - wM / 2), inPath = x1 <= 0.5 && x2 >= 0.5;
+  const danger = k === 'vehicle' && !clipped && !own && o.conf >= 0.35 && Z <= 3 && (inPath ? Z <= 2 : gapM <= 0.6);
+  return { k, Z, Xc, wM, len, gapM, inPath, clipped, own, danger };
+}
+const dangerCol = r => (r.gapM < 0.45 || r.inPath) ? '#e5484d' : '#f5a524';
+
+function drawRiderBev(cv, f, a) {
+  const g = cv.getContext('2d'), W = cv.width, H = cv.height;
+  g.clearRect(0, 0, W, H);
+  const PX = W / 8, PZ = (H - 50) / 14;                       // ±4 m sideways, 0–14 m ahead
+  const sx = X => W / 2 + X * PX, sy = Z => H - 40 - Z * PZ;
+  g.strokeStyle = '#1c2128'; g.lineWidth = 1;
+  for (let m = -4; m <= 4; m++) { g.beginPath(); g.moveTo(sx(m), sy(0)); g.lineTo(sx(m), 8); g.stroke(); }
+  g.fillStyle = '#5f6670'; g.font = '9px sans-serif'; g.textAlign = 'left';
+  for (let z = 2; z <= 14; z += 2) g.fillText(z + ' m', 3, sy(z) + 3);
+  g.strokeStyle = '#3ad1ff66'; g.setLineDash([4, 4]); g.strokeRect(sx(-0.9), sy(3), 1.8 * PX, 3 * PZ + 6); g.setLineDash([]);
+  g.fillStyle = '#3ad1ff'; g.beginPath(); g.ellipse(sx(0), sy(0) + 4, 6, 14, 0, 0, 7); g.fill();
+  g.textAlign = 'center'; g.font = '11px sans-serif'; g.fillText('you', sx(0), H - 6);
+  if (!f) { g.fillStyle = '#9aa0a6'; g.fillText('no detections', W / 2, 24); return; }
+  let closest = null;
+  for (const o of f.objs) {
+    const r = riderGeo(o);
+    if (r.k === 'other' || o.conf < 0.35 || r.own || r.Z > 14 || Math.abs(r.Xc) > 4.6) continue;
+    g.fillStyle = r.danger ? dangerCol(r) : (r.k === 'vehicle' ? '#8b929c' : KCOL[r.k]);
+    g.beginPath(); g.roundRect(sx(r.Xc - r.wM / 2), sy(r.Z + r.len), r.wM * PX, Math.max(6, r.len * PZ), 4); g.fill();
+    if (r.danger && (!closest || r.gapM < closest.gapM)) closest = r;
+  }
+  if (closest) {
+    g.fillStyle = '#fff'; g.font = 'bold 12px sans-serif';
+    g.fillText(closest.inPath ? closest.Z.toFixed(1) + ' m ahead' : 'gap ' + gapTxt(closest.gapM), sx(closest.Xc), sy(closest.Z) + 14);
+  }
+}
+
 function drawBev(cv, f) {
   const g = cv.getContext('2d'), W = cv.width, H = cv.height;
+  const a = (clips.find(c => c.id === current) || {}).analysis || {};
+  const mode = a.camera_mode || 'dashcam';
+  if (mode === 'rider') return drawRiderBev(cv, f, a);
   g.clearRect(0, 0, W, H);
   g.strokeStyle = '#232830'; g.lineWidth = 2;
   for (const x of [-1.6, -0.55, 0.55, 1.6]) { g.beginPath(); g.moveTo(W / 2 + x * 60, H); g.lineTo(W / 2 + x * 12, 30); g.stroke(); }
-  const a = (clips.find(c => c.id === current) || {}).analysis || {};
-  const mode = a.camera_mode || 'dashcam';
   g.textAlign = 'center'; g.font = '11px sans-serif';
   if (mode === 'rider') {
     g.fillStyle = '#3ad1ff'; g.beginPath(); g.ellipse(W / 2, H - 36, 7, 18, 0, 0, 7); g.fill();
@@ -349,7 +402,7 @@ async function loadLabel() {
   const c = lqueue[0];
   if (!c) { $('#lstage').innerHTML = '<p>All clips labeled. Thank you!</p>'; return; }
   $('#lstage').innerHTML = `<div class="vid" style="max-width:860px"><video src="${BASE}video?id=${c.id}" controls autoplay muted playsinline></video></div>
-    <p class="muted">Does a person on a bike or on foot come within about one car length of a moving vehicle, or have to react suddenly?</p>
+    <p class="muted"><b>Close call</b> = a vehicle in traffic (not parked) comes within about an arm's length (half a metre) of the rider or of anyone else on a bike or on foot, or someone has to brake or swerve suddenly. Watch the whole clip; pick <b>Can't tell</b> if you can't judge it.</p>
     <div class="row"><button class="btn big approve" data-l="CLOSE_CALL">Close call</button><button class="btn big" data-l="NO_CONFLICT">No conflict</button><button class="btn big reject" data-l="CANT_TELL">Can't tell</button></div>`;
   document.querySelectorAll('#lstage [data-l]').forEach(b => b.onclick = async () => {
     await api('api/label', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ clip_id: c.id, label: b.dataset.l, labeler: name }) });
