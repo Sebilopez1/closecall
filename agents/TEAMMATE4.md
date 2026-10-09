@@ -4,7 +4,7 @@ Real-Time Video Agents Hack NYC · build 9:30 AM · submit by 4:30 PM ET
 
 **Your job:** make sure we submit on time and that the judges understand why CloseCall matters. You're also the team's clock. You don't need a build machine (only two per team).
 
-**What we're building (1 line):** CloseCall finds near misses between people and cars in dashcam video, lets a person approve or reject each one, and reports how often it's right.
+**What we're building (1 line):** CloseCall finds near misses between people and cars in dashcam video, flags construction-zone hazards like exposed wires or open holes, lets a person approve or reject each one, and reports how often it's right.
 
 ---
 
@@ -49,14 +49,15 @@ Real-Time Video Agents Hack NYC · build 9:30 AM · submit by 4:30 PM ET
 - ✗ **Judging:** lead the 60-second pitch while Teammate 2 shows the app.
 
 ## Pitch (the submission description)
-Cities usually redesign a dangerous street only after someone is injured, because crash reports are their main warning sign and they arrive too late. Near misses happen far more often and tend to cluster at the same dangerous spots, so they are the earliest warning a city can get. The footage already exists in bus and fleet dashcams, but no one can watch thousands of hours of it. CloseCall watches it, gives a city traffic engineer a short list of close calls with the clip as proof, and lets the engineer approve or reject each one; every decision is saved with its evidence. It keeps a person in charge, says "can't tell" when the video is unclear instead of guessing, and measures how often it's right: correct X% of the time, give or take Y, on clips we labeled by hand. It looks at places and patterns, never people: no face recognition, no license plates, no tracking.
+Cities usually redesign a dangerous street only after someone is injured, because crash reports are their main warning sign and they arrive too late. Near misses happen far more often and tend to cluster at the same dangerous spots, so they are the earliest warning a city can get. Construction zones add risks that change daily: exposed wires, open trenches and heavy equipment right next to people and traffic. The footage already exists in bus and fleet dashcams, but no one can watch thousands of hours of it. CloseCall watches it, gives a city traffic engineer a short list of close calls and work-zone hazards with the clip as proof, and lets the engineer approve or reject each one; every decision is saved with its evidence. It keeps a person in charge, says "can't tell" when the video is unclear instead of guessing, and measures how often it's right on near misses: correct X% of the time, give or take Y, on clips we labeled by hand. It looks at places and patterns, never people: no face recognition, no license plates, no tracking.
 
 **Tools used:** NVIDIA Cosmos Reason (via the VAST video pipeline) to check each clip · Cosmos Embed + VAST semantic search to find moments · YOLO11 for person and vehicle detection · VAST DataEngine and VastDB as the system of record · W&B Weave for evaluation and tracing · CoreWeave GPUs hosting the models and our app · Cursor.
 
 ## Demo script (3 minutes)
 - 0:00 **Teammate 1:** "Cities fix dangerous streets after someone gets hurt. Near misses are the early warning, but nobody can watch thousands of hours of fleet video. CloseCall does."
 - 0:30 **Teammate 2:** Review tab → open a real clip → Cosmos's verdict and reason → type a reason → **Approve** → Decision log shows the saved record: who, when, which prompt version.
-- 1:20 **Teammate 2:** an "Unclear — needs a person" clip: "When the video can't settle it, CloseCall says so instead of guessing."
+- 1:10 **Teammate 2:** an "Unclear — needs a person" clip: "When the video can't settle it, CloseCall says so instead of guessing."
+- 1:25 **Teammate 2:** a work-zone hazard clip: "It also flags construction hazards like exposed wires, open holes and debris before someone gets hurt."
 - 1:40 **Teammate 1:** Accuracy tab: "On N clips we labeled by hand, search alone was right P0% of the time. With our checks it's P%, give or take R, and it says can't tell on C%."
 - 2:20 **Teammate 1:** Data & Limits tab: "No faces, no plates, no tracking. Places and patterns, not people."
 - 2:40 **Teammate 2:** "Next: a pilot with one city fleet. The same engine helps delivery fleets coach drivers."
@@ -65,13 +66,15 @@ Cities usually redesign a dangerous street only after someone is injured, becaus
 - **How accurate is it?** "On N clips two of us labeled blind, precision is P with this range, and it says 'can't tell' on C% and sends those to a person."
 - **Why not just trust the AI?** "We measured it: our checks raised precision from P0 to P. When it's unsure, a human decides."
 - **Do near misses matter?** "Bellevue, Washington analyzed about 5,000 hours of intersection video and found near-crashes accurately predict where future crashes happen."
-- **Who would use it?** "City traffic-safety teams, using cameras already on buses and city fleets. Fleets can also use it to coach drivers."
+- **Why construction zones?** "Work zones change every day and put wires, open holes and heavy equipment right next to people and traffic. The same footage can flag them before someone trips or a driver swerves."
+- **Who would use it?** "City traffic-safety teams and construction safety managers, using cameras already on buses and city fleets. Fleets can also use it to coach drivers."
 - **What did you build versus what was provided?** "The event provided the video pipeline and models. We built the candidate finder, the Cosmos check and decision rule, the approval app with decision history, and the accuracy test."
 - **Privacy?** "No faces, no plates, no tracking people. Only places and patterns."
 - **What happens when it's wrong?** "A person rejects it, the rejection is logged, and it becomes a new test case."
-- **What's next?** "Test on a public near-miss dataset, add night analysis (77% of US pedestrian deaths in 2023 happened in the dark), then pilot with one fleet."
+- **What's next?** "Score the hazard tags against hand labels, test on a public near-miss dataset, add night analysis (77% of US pedestrian deaths in 2023 happened in the dark), then pilot with one fleet."
 
 ## Labeling rules
 - **CLOSE_CALL:** a person in or entering the road comes within about one car length of a moving vehicle, or someone has to react suddenly.
 - **NO_CONFLICT:** on the sidewalk or far away, the car is stopped, or there's plenty of room.
 - **CANT_TELL:** hidden, too dark or blurry, or the clip ends too soon.
+- A hazard with no close call (wires, a hole, debris) is `NO_CONFLICT`. Hazards aren't labeled today.
