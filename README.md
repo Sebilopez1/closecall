@@ -1,90 +1,56 @@
 # CloseCall
 
-**Tesla-style eyes for people on bikes and on foot.**
+**Tesla-style eyes for people on bikes.**
 
-Cars get more sensors every year; people on bikes still get a bell. CloseCall watches street footage on behalf of cyclists and pedestrians: for each near miss it says who was at risk, what the threat was (a turning car, an opening door, a close pass, a bus pulling in) and which side it came from, shown as a Tesla-style rider view. It also flags construction-zone hazards like exposed wires, open holes and debris. It checks each clip with NVIDIA Cosmos and lets a safety manager approve or reject it. Every decision is saved with its evidence, and we measure how often the system is right on clips we labeled by hand.
+Cars get radar, cameras and blind-spot warnings; people on bikes get a bell. CloseCall turns the camera on a bike into sensing: it finds every vehicle around the rider, estimates in metres how much room each one left, and gives every clip a danger score from 0.0 to 10.0 with the reason, like "Car passed about 0.3 m from you on your left." A person reviews the close calls, every decision is logged, and the score is measured against blind ratings from people.
 
-Built at Real-Time Video Agents Hack NYC, October 9, 2026.
+Built at Real-Time Video Agents Hack NYC, October 9, 2026. Live app (event network): https://team-15-app.thecosmoslabs.com/app/
 
 ## How it works
-1. **Find:** search the event's Toronto dashcam footage for cyclists and pedestrians near moving vehicles (YOLO must see both): close passes, opening doors, right turns across bike lanes, buses pulling in. Also search for work zones with wires, holes, debris or equipment.
-2. **Check:** Cosmos re-watches each candidate with our question and answers `CLOSE_CALL`, `NO_CONFLICT` or `CANT_TELL`, plus who was at risk, what the threat was and which side it came from, and a hazard tag (`wires`, `open_hole`, `debris`, `equipment`, `work_zone` or `none`). Unclear clips go to a person instead of being guessed.
-3. **Approve:** a person approves or rejects each clip in the web app, next to its rider view. Every decision is logged: who, when, which prompt version.
-4. **Score:** near-miss precision, recall and coverage against hand labels, each with a 95% range. Hazard tags aren't scored yet.
+1. **Find.** Search the event's video library (VAST, through the NVIDIA VSS search service) for riding situations: cars passing cyclists, riding next to moving traffic, opening doors, right turns across bike lanes, buses pulling in, plus work-zone hazards. The main source is a New York bike-mounted camera (`nyc_bike_gopro-1`), plus a dashcam and street cameras. Each scan keeps 60 five-second clips.
+2. **Sense.** YOLO11 boxes every car, bus, truck, bike and person in all 150 frames of a clip. CloseCall follows each vehicle from frame to frame and uses its real size as a ruler (a car is about 1.5 m tall, a bus about 3 m) to estimate how far ahead it is and how far to the side, in metres. It also tells who was moving: a vehicle passing the rider, or the rider squeezing past slow traffic.
+3. **Understand.** NVIDIA Cosmos describes each clip in words. When Cosmos itself says a vehicle passed closely, the rider was weaving between cars, or someone braked hard, that adds to the score: a second, independent signal.
+4. **Score.** Danger 0.0 to 10.0; 5.0 and up is a close call. A big vehicle right alongside, too close to measure, scores 4.0 so a person takes a look. Clips with no detections go to a person instead of being guessed.
+5. **Review.** In the web app a person watches the clip with the boxes drawn on it, next to a top-down view of the vehicles in metres around "you", and approves or rejects it with a reason. Every decision is saved: who, when, the score at the time and the scoring version.
+6. **Measure.** Teammates rate clips 0 to 10 without seeing the AI's score. The Accuracy tab shows the average difference between the AI and people, the correlation, how often both land on the same side of 5.0, and precision and recall with 95% ranges, next to a baseline that trusts the search alone.
 
-**Privacy:** places and patterns, never people. No face recognition, no license plates, no tracking.
+**Privacy:** places and patterns, never people. No face recognition, no license plates, no tracking. Raw video stays in VAST; the app keeps only scores, decisions and ratings.
 
-**Next:** the same eyes on a phone or helmet camera with live warnings, starting with delivery and bike-share fleets. Every ride adds to a map of dangerous streets for cities.
+**Results so far (1:15 PM):** 9 of 60 clips score 5.0 or more. On the first 16 clips a teammate judged, CloseCall landed on the same side of 5.0 as the person on 14 (88%, 95% range 64–97%); trusting the search alone got 4 of 16 (25%). It's a small sample; the final numbers are in the Accuracy tab and `pitch.md`.
 
-**Results:** added here after scoring.
+**Limits:** distances are estimates from one camera (roughly ±30–50%), and long vehicles seen from the side can't be measured. The hand-rated set is small. Hazard tags (wires, holes, debris, work zones) come from Cosmos's description and aren't scored yet.
+
+**Next:** run it live on a phone or helmet camera with sound or vibration warnings; give delivery and bike-share fleets a safety score per route; add up close calls by street into a map that shows cities where to build protected lanes.
 
 ---
 
 ## For the team
 
-### Who opens what
-| Teammate | Role | Works on | Open this |
-|---|---|---|---|
-| 1 | Pipeline: find, check, score | build machine | `agents/TEAMMATE1.md` |
-| 2 | App: review, decisions, accuracy | build machine | `agents/TEAMMATE2.md` |
-| 3 | Scoring (accuracy, Weave), labels 1–40, testing | build machine | `agents/TEAMMATE3.md` |
-| 4 | App tabs (Decision log, Accuracy, Data & Limits), labels 21–60, story, submission | build machine | `agents/TEAMMATE4.md` |
+### Run and deploy (build machine terminal)
+```
+cd ~/vast-builders-challenge/closecall
+git pull
+bash deploy/deploy.sh      # code changes reach the running app in about a minute
+bash deploy/logs.sh        # app logs
+```
+Credentials come from `/config` on the build machine and go straight into a Kubernetes Secret, never into the repo. Re-scan the footage with the **Re-scan footage** button in the app.
 
-### Build machine setup (everyone, same team number)
-Type these in the build machine **terminal**, not the agent chat:
-```
-cd ~/vast-builders-challenge
-git clone https://github.com/Sebilopez1/closecall
-git config --global credential.helper 'cache --timeout=36000'
-cd closecall && git push
-```
-- **Username:** your GitHub username.
-- **Password:** paste your GitHub token (nothing shows while you paste; that's normal).
-- You should see `Everything up-to-date`. Git now remembers your login for 10 hours.
+### Rate clips (everyone)
+App → **Label (blind)** → type your name → watch the clip → rate 0 to 10 → **Save rating**. Use **Can't judge — skip** if you can't tell. Everyone gets the clips in the same order, so two people rating the first 30 gives us agreement between people too.
 
-Then start the agent:
-```
-cd ..
-agent
-/model
-```
-Pick **Auto Balance** and paste the first message from your TEAMMATE file.
-
-### How the agents work together
-- GitHub is the shared folder. The four agents never talk directly.
-- For every task, each agent: pulls → builds → tests → commits → pushes → writes one line in its status file.
-- Status files: `status/pipeline.md` (Teammate 1), `status/app.md` (Teammate 2), `status/scoring.md` (Teammate 3) and `status/tabs.md` (Teammate 4). Signals to watch for: `SHELL READY`, `LABELS READY`, `VERDICTS READY`, `READY FOR SCORING`, `RESULTS READY`, `TABS UPDATED`, `APP FROZEN`, `FROZEN`.
-- Each agent edits only its own files, so they never overwrite each other. Only Teammate 2's agent deploys the app.
-- Teammates 3 and 4 fill in their label files on github.com (pencil icon → **Commit changes**). Accept the repo invite first.
-- Run git only inside `closecall/`. The parent folder is the event's own repo.
+### Git rules
+- Pull before you push. Never `git push --force`.
+- Changing anything in `app/`? Push to your own branch (`git push origin HEAD:yourname-work`) and say so; it gets merged into main after a check.
+- Never put keys or tokens in code, files or commits.
+- No faces, no license plates, no tracking people.
+- Reviewer or rater name `test` is for testing; those clicks are left out of the log and the scores.
 
 ### Repo map
 ```
-agents/        one brief per teammate
-pipeline/      find, check, decide (Teammate 1's agent); evaluate.py (Teammate 3's agent)
-app/           the web app shell and Review tab (Teammate 2's agent)
-app/tabs/      one file per tab; Decision log, Accuracy, Data & Limits, counters (Teammate 4's agent)
-labels/        hand labels: labels_teammate3.csv, labels_teammate4.csv
-notes/         schema.md (real table and field names), reviews
-status/        pipeline.md, app.md, scoring.md, tabs.md: progress lines
-docs/          demo click path, submission text, judge Q&A
-pitch.md       project description
-results.json   accuracy numbers (after scoring)
+app/main.py       server: VSS search, detections, scoring, API, video proxy
+app/index.html    web app: Review, Label (blind), Decision log, Accuracy, Data & Limits
+deploy/           deploy.sh (Kubernetes), logs.sh
+pitch.md          pitch, demo click path, judge Q&A
+agents/, status/, app/tabs/   the earlier multi-agent plan (not used by the live app)
 ```
-
-### Timeline (ET)
-| Time | What happens |
-|---|---|
-| 9:30 | Build starts |
-| ~10:15 | `LABELS READY`: Teammates 3 and 4 start labeling |
-| ~11:20 | `VERDICTS READY`: the app switches to real clips |
-| 12:30 | Checkpoint: one close call found → checked → approved → saved |
-| 1:00 | Scoring |
-| 2:00 | No new features |
-| 3:15 | Freeze; record the demo video |
-| 3:45 | Submit |
-
-### Rules
-- Never put keys or tokens in code, files or commits.
-- No faces, no license plates, no tracking people.
-- Reviewer name `test` is for testing; those clicks are hidden from the Decision log.
+API for the curious: `api/clips`, `api/accuracy`, `api/decisions`, `api/export` (everything as JSON).
