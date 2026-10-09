@@ -2,15 +2,15 @@
 
 **Fix dangerous streets before someone gets hurt.**
 
-CloseCall finds near misses between people (pedestrians and cyclists) and moving vehicles in dashcam video, checks each one with NVIDIA Cosmos, and lets a city traffic engineer approve or reject it. Every decision is saved with its evidence, and we measure how often the system is right on clips we labeled by hand.
+CloseCall finds near misses between people (pedestrians and cyclists) and moving vehicles in dashcam video, and flags construction-zone hazards like exposed wires, open holes, debris and heavy equipment near people or traffic. It checks each clip with NVIDIA Cosmos and lets a city traffic engineer approve or reject it. Every decision is saved with its evidence, and we measure how often the system is right on clips we labeled by hand.
 
 Built at Real-Time Video Agents Hack NYC, October 9, 2026.
 
 ## How it works
-1. **Find:** search the event's Toronto dashcam footage for moments where a person is near a moving vehicle, and keep the clips where YOLO sees both.
-2. **Check:** Cosmos re-watches each candidate with our question and answers `CLOSE_CALL`, `NO_CONFLICT` or `CANT_TELL`. Unclear clips go to a person instead of being guessed.
+1. **Find:** search the event's Toronto dashcam footage for moments where a person is near a moving vehicle (YOLO must see both), and for work zones with wires, holes, debris or equipment.
+2. **Check:** Cosmos re-watches each candidate with our question and answers `CLOSE_CALL`, `NO_CONFLICT` or `CANT_TELL`, plus a hazard tag (`wires`, `open_hole`, `debris`, `equipment`, `work_zone` or `none`). Unclear clips go to a person instead of being guessed.
 3. **Approve:** a person approves or rejects each clip in the web app. Every decision is logged: who, when, which prompt version.
-4. **Score:** precision, recall and coverage against hand labels, each with a 95% range.
+4. **Score:** near-miss precision, recall and coverage against hand labels, each with a 95% range. Hazard tags aren't scored yet.
 
 **Privacy:** places and patterns, never people. No face recognition, no license plates, no tracking.
 
