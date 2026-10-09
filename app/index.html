@@ -308,6 +308,8 @@ function startOverlay() {
     if (f && $('#ov')?.checked) {
       g.lineWidth = 2; g.font = '12px sans-serif';
       const a = (clips.find(c => c.id === current) || {}).analysis || {};
+      // boxes go on the picture itself: a portrait clip sits inside the 16:9 player with bars on the sides
+      const vw = v.videoWidth || W, vh = v.videoHeight || H, s = Math.min(W / vw, H / vh), dw = vw * s, dh = vh * s, ox = (W - dw) / 2, oy = (H - dh) / 2;
       for (const o of f.objs) {
         const k = kindOf(o.label), [x1, y1, x2, y2] = o.box;
         let col = KCOL[k], txt = o.label;
@@ -316,8 +318,8 @@ function startOverlay() {
           if (r.own) continue;                                   // the rider's own arms and bike
           if (r.danger) { col = dangerCol(r); txt += r.inPath ? ' ' + r.Z.toFixed(1) + ' m ahead' : ' gap ' + gapTxt(r.gapM); }
         }
-        g.strokeStyle = col; g.strokeRect(x1 * W, y1 * H, (x2 - x1) * W, (y2 - y1) * H);
-        g.fillStyle = col; g.fillText(txt, x1 * W + 3, Math.max(12, y1 * H - 4));
+        g.strokeStyle = col; g.strokeRect(ox + x1 * dw, oy + y1 * dh, (x2 - x1) * dw, (y2 - y1) * dh);
+        g.fillStyle = col; g.fillText(txt, ox + x1 * dw + 3, Math.max(12, oy + y1 * dh - 4));
       }
     }
     drawBev(bev, f);
