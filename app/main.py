@@ -827,6 +827,24 @@ class Handler(BaseHTTPRequestHandler):
                                        "clips": [public_clip(c) for c in STATE["clips"]]})
             if p == "/api/debug":
                 return self.send_json(debug_info(q))
+            if p == "/api/search":
+                # open search over the whole library (any camera), for surveying the footage
+                text = (q.get("q") or "").strip()
+                if not text:
+                    return self.send_json({"error": "need q"}, 400)
+                cam = (q.get("camera") or "").strip() or None
+                try:
+                    k = max(1, min(50, int(q.get("top_k") or 20)))
+                except ValueError:
+                    k = 20
+                res = search(text, camera=cam, top_k=k)
+                out = []
+                for it in (res or {}).get("results") or []:
+                    f = clip_fields(it)
+                    out.append({"source": f["source"], "camera_id": f["camera_id"], "start": f["start"], "end": f["end"],
+                                "similarity": f["similarity"], "filename": f.get("filename"), "caption": f.get("caption"),
+                                "video": "video?source=" + urllib.parse.quote(f["source"] or "", safe="")})
+                return self.send_json({"query": text, "camera": cam, "n": len(out), "results": out})
             if p == "/video":
                 return self.proxy_video(q)
             self.send_json({"error": "not found"}, 404)
@@ -874,6 +892,8 @@ class Handler(BaseHTTPRequestHandler):
 
     def proxy_video(self, q):
         c = next((c for c in STATE["clips"] if c["id"] == q.get("id")), None)
+        if not c and (q.get("source") or "").startswith("s3://"):
+            c = {"source": q["source"]}                   # any segment from the search, for surveying
         if not c:
             return self.send_json({"error": "unknown clip"}, 404)
         url = VSS_URL + "/api/v1/videos/stream?" + urllib.parse.urlencode({"source": c["source"], "token": login()})
