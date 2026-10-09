@@ -123,6 +123,7 @@
   <section id="tab-limits" class="hidden">
     <div class="center">
       <p><b>What it is.</b> CloseCall turns the street cameras a city already has into Vision Zero evidence: for every place it scans, it finds the specific, checkable moments a safety team can act on (a vehicle passing a work-zone flagger, a car stopped in the crosswalk, a door opened into traffic, a close pass on a cyclist), measures how close vehicles came in metres, and links each finding to its clip. It's built for Safe Streets for All safety action plans and before/after checks of street fixes.</p>
+      <p><b>Reference clips.</b> Outside footage the team rates by hand, shown in Review as a yardstick for the top of the scale and kept out of the measured scan and the accuracy numbers. <label class="btn">Upload the manhole clip (.mp4) <input type="file" id="refFile" accept="video/mp4" style="display:none"></label> <span id="refStatus" class="muted"></span></p>
       <p>CloseCall looks at places and patterns, never people: no face recognition, no license plates, no tracking anyone. Raw video stays in VAST; only events, decisions and labels are saved. Every action is approved by a person and logged.</p>
       <p><b>How it decides.</b> NVIDIA Cosmos describes each clip and YOLO11 marks every car, bus, truck, bike and person in each frame. On the bike camera the rider is the camera: CloseCall follows each vehicle from frame to frame and uses its real size as a ruler (a car is about 1.5 m tall, a bus about 3 m) to estimate how far ahead it is and how much space it left beside the rider, in metres. Each clip gets a danger score from 0.0 to 10.0: how little space vehicles left the rider (in metres), weighted by who was moving (a vehicle passing the rider counts more than the rider squeezing past slow traffic) and by size (buses and trucks count more), plus 2.5 when Cosmos itself describes a close pass, weaving, swerving or hard braking. 5.0 and up counts as a close call. A big vehicle right alongside, too close to measure, scores 4.0 so a person takes a look. On street and car cameras it checks how close vehicles come to anyone on a bike or on foot at the same depth, and whether Cosmos saw braking, swerving or a near miss.</p>
       <p><b>Limits.</b> Distances come from one camera, so they're estimates (roughly ±30–50%): they assume a forward-facing camera and typical vehicle sizes, and long vehicles seen from the side can't be measured. Tested on a small hand-labeled set of New York bike-camera clips plus some street and dashcam clips. Cosmos and YOLO can miss fast, dark or hidden scenes, so unclear clips go to a person. Hazard tags (wires, holes, debris) are Cosmos's reading of the clip and aren't scored yet. Decisions are stored on the app's disk for the demo.</p>
@@ -159,6 +160,13 @@ document.querySelectorAll('#tabs button').forEach(b => b.onclick = () => {
 document.querySelectorAll('#filters .chip').forEach(c => c.onclick = () => {
   filter = c.dataset.f; document.querySelectorAll('#filters .chip').forEach(x => x.classList.toggle('on', x === c)); renderList();
 });
+$('#refFile').onchange = async e => {
+  const f = e.target.files[0]; if (!f) return;
+  $('#refStatus').textContent = 'uploading…';
+  const r = await fetch(BASE + 'api/reference?id=ref-manhole', { method: 'POST', headers: { 'Content-Type': 'video/mp4' }, body: f }).then(r => r.json()).catch(err => ({ error: String(err) }));
+  $('#refStatus').textContent = r.ok ? `saved (${Math.round(r.bytes / 1024)} KB) — it's at the top of Review` : 'upload failed: ' + (r.error || '');
+  if (r.ok) loadClips();
+};
 $('#refresh').onclick = async () => { await api('api/refresh', { method: 'POST' }); toast('Re-scanning the footage…'); poll(); };
 
 async function poll() {
@@ -208,7 +216,7 @@ function renderList() {
     const ob = (a.observations || [])[0];
     const title = ob ? ob.text : a.verdict === 'CANT_TELL' ? 'No data' : a.threat && a.threat !== 'none' ? (THREAT[a.threat] || 'Vehicle close') : 'Nothing close';
     return `<div class="card ${current === c.id ? 'sel' : ''} ${c.decided ? 'done' : ''}" style="border-left-color:${scoreCol(a.score)}" data-id="${c.id}">
-      <div class="t"><span class="score" style="background:${scoreCol(a.score)}">${esc(scoreTxt(a.score))}</span>${esc(title)} ${a.hazard && a.hazard !== 'none' ? '· ⚠ ' + esc(a.hazard.replace('_', ' ')) : ''}</div>
+      <div class="t"><span class="score" style="background:${scoreCol(a.score)}">${esc(scoreTxt(a.score))}</span>${c.reference ? '<span class="pill">Reference · team-rated</span>' : ''}${esc(title)} ${a.hazard && a.hazard !== 'none' ? '· ⚠ ' + esc(a.hazard.replace('_', ' ')) : ''}</div>
       <div class="m">${esc(a.location || MODE[a.camera_mode] || '')}${(a.observations || []).length > 1 ? ' · +' + ((a.observations || []).length - 1) + ' more' : ''} · ${esc(a.who_at_risk === 'none' ? 'nobody at risk' : a.who_at_risk)}${a.threat_side && a.threat_side !== 'none' ? ' · ' + esc(a.threat_side) : ''}${a.clearance_m != null && a.threat !== 'none' ? ' · gap ' + esc(gapTxt(a.clearance_m)) : ''}${c.decided ? ' · decided' : ''}</div>
     </div>`;
   }).join('') : '<p class="muted">No clips here yet.</p>';
@@ -244,8 +252,8 @@ async function select(id) {
         <div class="legend"><span><i style="background:#f0f0f0"></i>vehicle</span><span><i style="background:#3ad1ff"></i>cyclist</span><span><i style="background:#7ee787"></i>pedestrian</span><span><label><input type="checkbox" id="ov" checked> sensing overlay</label></span>${c.has_detections ? '' : '<span>no YOLO detections for this clip</span>'}</div>
         <div class="warn" style="color:${SEV[a.severity] || SEV.none}">${esc(a.warning || '')}</div>
         <div><span class="pill" style="background:${scoreCol(a.score)};color:#111;font-weight:700;border-color:transparent">danger ${esc(scoreTxt(a.score))} / 10</span><span class="pill">${esc(VERDICT[a.verdict] || a.verdict)}</span><span class="pill">at risk: ${esc(a.who_at_risk)}</span><span class="pill">threat: ${esc(THREAT[a.threat] || a.threat)}</span><span class="pill">side: ${esc(a.threat_side)}</span><span class="pill">severity: ${esc(a.severity)}</span>${a.clearance_m != null && a.threat !== 'none' ? `<span class="pill">gap ≈ ${esc(gapTxt(a.clearance_m))}</span>` : ''}<span class="pill">camera: ${esc(c.camera_id || '?')} (${esc(MODE[a.camera_mode] || '')})</span>${a.hazard !== 'none' ? `<span class="pill">hazard: ${esc(a.hazard)}</span>` : ''}</div>
-        <div class="box" style="margin-top:10px"><h3>What CloseCall found · ${esc(a.location || '')}</h3>${(a.observations || []).length ? '<ul class="obs">' + a.observations.map(o => `<li>${o.t != null ? `<a href="#" data-t="${o.t}">${Number(o.t).toFixed(1)} s</a> · ` : ''}${esc(o.text)}${o.gap_m != null ? ' <span class="muted">(measured)</span>' : ' <span class="muted">(Cosmos)</span>'}</li>`).join('') + '</ul>' : '<p class="muted">Nothing specific found in this clip.</p>'}</div>
-        <div class="box" style="margin-top:10px"><h3>What Cosmos saw</h3><div class="caption">${esc(c.caption || '—')}</div>
+        <div class="box" style="margin-top:10px"><h3>${c.reference ? 'Reference clip · rated 10.0 by the team · outside footage, not scored by CloseCall' : 'What CloseCall found · ' + esc(a.location || '')}</h3>${(a.observations || []).length ? '<ul class="obs">' + a.observations.map(o => `<li>${o.t != null ? `<a href="#" data-t="${o.t}">${Number(o.t).toFixed(1)} s</a> · ` : ''}${esc(o.text)}${o.gap_m != null ? ' <span class="muted">(measured)</span>' : c.reference ? ' <span class="muted">(team)</span>' : ' <span class="muted">(Cosmos)</span>'}</li>`).join('') + '</ul>' : '<p class="muted">Nothing specific found in this clip.</p>'}</div>
+        <div class="box" style="margin-top:10px"><h3>${c.reference ? 'What the clip shows' : 'What Cosmos saw'}</h3><div class="caption">${esc(c.caption || '—')}</div>
           <div class="muted" style="font-size:12px;margin-top:6px">Found by: ${esc([...new Set(c.queries || [])].slice(0, 3).join(' · '))} · camera ${esc(c.camera_id || '?')}</div></div>
         <div class="box" style="margin-top:10px"><h3>Decision</h3>
           <textarea id="reason" placeholder="Why approve or reject? (saved with the decision)"></textarea>
