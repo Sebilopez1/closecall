@@ -37,7 +37,7 @@ MAX_CLIPS = int(os.environ.get("CLOSECALL_MAX_CLIPS", "60"))
 INSECURE = os.environ.get("VSS_INSECURE", "1") == "1"
 RIDER_CAMS = {c.strip() for c in os.environ.get("CLOSECALL_RIDER_CAMS", "nyc_bike_gopro-1").split(",") if c.strip()}
 SKIP_CAMS = {c.strip() for c in os.environ.get("CLOSECALL_SKIP_CAMS", "smartspace_cam-1,sdg_warehouse_cam-2").split(",") if c.strip()}
-VERSION = "rider_v2"
+VERSION = "rider_v3"
 
 RIDER_QUERIES = [
     ("close_pass", "car passing close to a cyclist"),
@@ -269,7 +269,7 @@ def norm_detections(js):
                 else:
                     frames.append({"t": t, "objs": [o]})
     frames.sort(key=lambda fr: fr["t"])
-    return {"frames": frames, "fps": fps}
+    return {"frames": frames, "fps": fps, "aspect": round(W / H, 4) if W and H else None}
 
 
 # ---------------------------------------------------------------- rider analysis
@@ -297,6 +297,8 @@ def gap(a, b):
     return math.hypot(dx, dy)
 
 
+RIDER_THREAT = {"pulling_away": "close_pass", "you_passing": "squeeze", "alongside": "alongside",
+                "closing_in": "too_close_ahead", "ahead": "too_close_ahead", "someone_ahead": "other"}
 SIDE_WORDS = {"left": "on your left", "right": "on your right", "ahead": "ahead of you", "behind": "from behind"}
 THREAT_WORDS = {
     "close_pass": "{veh} passing too close {side}",
@@ -319,70 +321,171 @@ def cam_mode(cam):
     return "fixed"
 
 
-def vru_vehicle_risk(frames, use_ego):
-    """How close any vehicle gets to a person on a bike or on foot that the camera can see."""
-    best = {"risk": 0.0, "side": "none", "veh": "Car", "t": None, "ego": False}
+def vru_vehicle_risk(frames, use_ego, skip_own_body=False, aspect_ratio=16 / 9):
+    """How close any vehicle gets to a person on a bike or on foot that the camera can see. Two boxes only
+    count as close when their bottoms (where they touch the ground) are at about the same depth, and the
+    closeness has to last a few frames."""
+    per_frame = []
     for f in frames:
-        vrus = [o for o in f["objs"] if kind_of(o["label"]) in ("bike", "person")]
-        vehs = [o for o in f["objs"] if kind_of(o["label"]) == "vehicle" and o["conf"] >= 0.3]
+        top = {"risk": 0.0}
+        vrus = [o for o in f["objs"] if kind_of(o["label"]) in ("bike", "person") and o["conf"] >= 0.35]
+        vehs = [o for o in f["objs"] if kind_of(o["label"]) == "vehicle" and o["conf"] >= 0.35
+                and o["box"][3] - o["box"][1] >= 0.04]
         bikes = [o for o in vrus if kind_of(o["label"]) == "bike"]
         for v in vrus:
-            # a person sitting on a bicycle counts as the cyclist, not a separate pedestrian
-            if kind_of(v["label"]) == "person" and any(overlap(v["box"], b["box"]) > 0.2 for b in bikes):
+            vb = v["box"]
+            if skip_own_body and vb[3] >= 0.95:          # bike cam: the rider's own arms and handlebars
                 continue
-            h = max(1e-3, v["box"][3] - v["box"][1])
-            cx = (v["box"][0] + v["box"][2]) / 2
+            if kind_of(v["label"]) == "person" and any(overlap(vb, b["box"]) > 0.2 for b in bikes):
+                continue                                  # a person on a bicycle counts once, as the cyclist
+            if any(overlap(vb, c["box"]) > 0.8 for c in vehs):
+                continue                                  # someone sitting inside a car or bus
+            h = max(1e-3, vb[3] - vb[1])
+            cx = (vb[0] + vb[2]) / 2
             if use_ego:
                 # dashcam: a big, central person/bike box means the camera car itself is very close
                 ego = max(0.0, min(1.0, (h - 0.22) / 0.33)) * (1.0 if abs(cx - 0.5) < 0.3 else 0.6)
-                if ego > best["risk"]:
+                if ego > top["risk"]:
                     eside = "behind" if kind_of(v["label"]) == "bike" or bikes else ("left" if cx > 0.5 else "right")
-                    best = {"risk": ego, "side": eside, "veh": "Car", "t": f["t"], "ego": True}
+                    top = {"risk": ego, "side": eside, "veh": "Car", "t": f["t"], "ego": True}
             for car in vehs:
-                g = gap(v["box"], car["box"]) / h          # gap measured in "person heights"
-                r = max(0.0, min(1.0, 1.0 - g / 2.5))       # ~2.5 heights is about one car length
-                if car["box"][3] - car["box"][1] < 0.08:     # far-away traffic doesn't count
-                    r *= 0.4
-                if r > best["risk"]:
-                    dx = (car["box"][0] + car["box"][2]) / 2 - cx
-                    dy = car["box"][3] - v["box"][3]         # + = car nearer the camera than the person
-                    if abs(dx) * 1.2 >= abs(dy):
-                        side = "left" if dx < 0 else "right"
-                    else:
-                        side = "behind" if dy > 0 else "ahead"
-                    best = {"risk": r, "side": side, "veh": car["label"].capitalize(), "t": f["t"], "ego": False}
+                cb = car["box"]
+                depth = abs(cb[3] - vb[3]) / h            # how far apart their bottoms are, in person heights
+                if depth > 0.35:
+                    continue
+                dx = max(0.0, cb[0] - vb[2], vb[0] - cb[2])
+                gap_m = dx * aspect_ratio / h * 1.7       # a person is about 1.7 m tall
+                r = max(0.0, min(1.0, 1.0 - gap_m / 1.5)) * (1.0 if depth <= 0.15 else (0.35 - depth) / 0.2)
+                if r > top["risk"]:
+                    side = "left" if (cb[0] + cb[2]) / 2 < cx else "right"
+                    top = {"risk": r, "side": side, "veh": car["label"].capitalize(), "t": f["t"], "ego": False,
+                           "clearance_m": round(gap_m, 2)}
+        per_frame.append(top)
+    ranked = sorted(per_frame, key=lambda b: -b["risk"])
+    best = ranked[min(4, len(ranked) - 1)] if ranked else {"risk": 0.0}   # the 5th strongest frame counts
+    if best["risk"] <= 0:
+        return {"risk": 0.0, "side": "none", "veh": "Car", "t": None, "ego": False}
     return best
 
 
-def rider_cam_risk(frames, cap):
-    """Camera on the bike: the rider is the camera. A vehicle that fills a big part of the frame is close
-    to the rider; its position in the frame says which side it is on."""
-    best = {"risk": 0.0, "side": "none", "veh": "Car", "t": None, "ego": True}
-    parked = bool(re.search(r"parked", cap))
-    heights = []
-    for f in frames:
-        mh = 0.0
-        for car in f["objs"]:
-            if kind_of(car["label"]) != "vehicle" or car["conf"] < 0.35:
-                continue
-            x1, y1, x2, y2 = car["box"]
-            h, cx = y2 - y1, (x1 + x2) / 2
-            mh = max(mh, h)
-            r = max(0.0, min(1.0, (h - 0.2) / 0.35))
-            if y2 > 0.92:                       # reaches the bottom of the frame: right beside the bike
-                r = min(1.0, r + 0.1)
-            side = "left" if cx < 0.38 else "right" if cx > 0.62 else "ahead"
-            if parked and side == "right":      # cars parked along the curb aren't a threat by themselves
-                r *= 0.6
+# Typical real heights (m). A box's height in the picture is a ruler: it says how far away the vehicle is,
+# and how far its inner edge sits from the middle of the picture says how far it is to the side.
+VEH_HEIGHT = {"car": 1.5, "suv": 1.7, "van": 2.0, "pickup": 1.8, "bus": 3.0, "truck": 3.0,
+              "motorcycle": 1.4, "motorbike": 1.4, "vehicle": 1.6}
+FOCAL_Y = float(os.environ.get("CLOSECALL_FOCAL_Y", "1.0"))   # bike cam focal length, in picture heights
+
+
+def _iou(a, b):
+    ix = max(0.0, min(a[2], b[2]) - max(a[0], b[0]))
+    iy = max(0.0, min(a[3], b[3]) - max(a[1], b[1]))
+    inter = ix * iy
+    union = (a[2] - a[0]) * (a[3] - a[1]) + (b[2] - b[0]) * (b[3] - b[1]) - inter
+    return inter / union if union > 0 else 0.0
+
+
+def vehicle_tracks(frames, step=2):
+    """Follow each vehicle from frame to frame (greedy box overlap), so one odd box doesn't count."""
+    tracks, active = [], []
+    for i, f in enumerate(frames):
+        if i % step:
+            continue
+        boxes = [o for o in f["objs"] if kind_of(o["label"]) == "vehicle" and o["conf"] >= 0.35
+                 and o["box"][3] - o["box"][1] >= 0.05 and o["box"][1] < 0.85]   # bottom strip: own bike parts
+        used = set()
+        for tr in active:
+            bi, bv = -1, 0.2
+            for j, o in enumerate(boxes):
+                if j not in used:
+                    v = _iou(tr["last"], o["box"])
+                    if v > bv:
+                        bi, bv = j, v
+            if bi >= 0:
+                used.add(bi)
+                tr["pts"].append({"t": f["t"], "box": boxes[bi]["box"]})
+                tr["last"], tr["miss"] = boxes[bi]["box"], 0
+            else:
+                tr["miss"] += 1
+        for j, o in enumerate(boxes):
+            if j not in used:
+                tr = {"label": o["label"], "pts": [{"t": f["t"], "box": o["box"]}], "last": o["box"], "miss": 0}
+                active.append(tr)
+                tracks.append(tr)
+        active = [tr for tr in active if tr["miss"] <= 3]
+    return [tr for tr in tracks if len(tr["pts"]) >= 3]
+
+
+def _geo(box, label, aspect_ratio):
+    x1, y1, x2, y2 = box
+    h, w = max(1e-3, y2 - y1), x2 - x1
+    height = VEH_HEIGHT.get(label, 1.6)
+    if x2 < 0.5:
+        side, u = "left", 0.5 - x2
+    elif x1 > 0.5:
+        side, u = "right", x1 - 0.5
+    else:
+        side, u = "ahead", 0.0
+    return {"side": side, "h": h, "w": w, "clipped": y2 >= 0.97 or y1 <= 0.01,
+            "aspect": w * aspect_ratio / h,          # about 1 when seen from behind, about 3 from the side
+            "X": aspect_ratio * height * u / h,       # metres between its near side and the rider's line
+            "Z": FOCAL_Y * height / h}                # metres ahead of the camera
+
+
+def rider_cam_risk(frames, aspect_ratio=16 / 9):
+    """Camera on the bike: the rider is the camera. For every vehicle, estimate how far it is to the side
+    of the rider (clearance) and how far ahead, from its box alone, and keep the closest moment."""
+    best = {"risk": 0.0, "side": "none", "veh": "Car", "t": None, "ego": True, "clearance_m": None,
+            "distance_m": None, "motion": None}
+    for tr in vehicle_tracks(frames):
+        label = tr["label"]
+        big = 1.1 if label in ("bus", "truck") else 1.0
+        g = [dict(_geo(p["box"], label, aspect_ratio), t=p["t"]) for p in tr["pts"]]
+        # beside the rider: seen mostly from behind (box not too wide), within 3 m, in at least 3 samples
+        near = [p for p in g if p["side"] != "ahead" and not p["clipped"] and p["aspect"] <= 2.2 and p["Z"] <= 3.0]
+        if len(near) >= 3:
+            at = sorted(near, key=lambda p: p["X"])[1]            # 2nd closest, so one odd box doesn't count
+            i = g.index(at)
+            dh = g[min(len(g) - 1, i + 6)]["h"] - g[max(0, i - 6)]["h"]
+            motion = "pulling_away" if dh < -0.04 else "you_passing" if dh > 0.04 else "alongside"
+            r = max(0.0, min(1.0, (0.9 - at["X"]) / 0.6)) * big * (1.0 if at["Z"] <= 2.0 else 0.85) \
+                * (0.95 if motion == "you_passing" else 1.0)
             if r > best["risk"]:
-                best = {"risk": r, "side": side, "veh": car["label"].capitalize(), "t": f["t"], "ego": True}
-        heights.append(mh)
-    if len(heights) >= 8:
-        q = max(1, len(heights) // 4)
-        if max(heights[-q:]) - max(heights[:q]) > 0.08:   # the closest vehicle keeps getting bigger
-            best["risk"] = min(1.0, best["risk"] + 0.1)
-            best["approaching"] = True
+                best = {"risk": r, "side": at["side"], "veh": label.capitalize(), "t": at["t"], "ego": True,
+                        "clearance_m": round(at["X"], 2), "distance_m": round(at["Z"], 1), "motion": motion}
+        # in the rider's path: straight ahead and closer than 2 m
+        ahead = [p for p in g if p["side"] == "ahead" and not p["clipped"] and p["Z"] <= 2.0]
+        if len(ahead) >= 3:
+            at = sorted(ahead, key=lambda p: p["Z"])[1]
+            closing = g[0]["h"] < 0.8 * at["h"]
+            r = max(0.0, min(1.0, (2.0 - at["Z"]) / 1.0)) * (1.0 if closing else 0.7)
+            if r > best["risk"]:
+                best = {"risk": r, "side": "ahead", "veh": label.capitalize(), "t": at["t"], "ego": True,
+                        "clearance_m": None, "distance_m": round(at["Z"], 1),
+                        "motion": "closing_in" if closing else "ahead"}
+        # a big vehicle right alongside, filling half the picture: too close to measure, so a person checks
+        along = [p for p in g if p["side"] != "ahead" and p["clipped"] and p["h"] >= 0.6 and p["w"] >= 0.45]
+        if len(along) >= 3 and best["risk"] < 0.5:
+            best = {"risk": 0.5, "side": along[1]["side"], "veh": label.capitalize(), "t": along[1]["t"],
+                    "ego": True, "clearance_m": None, "distance_m": None, "motion": "alongside"}
     return best
+
+
+def rider_warning(best):
+    veh, side = best["veh"], SIDE_WORDS.get(best["side"], "")
+    m = best.get("clearance_m")
+    dist = "very close" if m is None else "less than 20 cm" if m < 0.2 else f"about {m:.1f} m"
+    motion = best.get("motion")
+    if motion == "pulling_away":
+        text = f"{veh} passed {dist} from you {side}"
+    elif motion == "you_passing":
+        text = f"You squeezed past a {veh.lower()} with {dist} to spare {side}" if m is not None else \
+            f"You squeezed past a {veh.lower()} {side}"
+    elif motion == "closing_in":
+        text = f"{veh} slowing right in front of you, about {best.get('distance_m')} m ahead"
+    elif motion == "ahead":
+        text = f"{veh} right in front of you, about {best.get('distance_m')} m ahead"
+    else:
+        text = f"{veh} alongside you, {dist} {side}"
+    return " ".join(text.split()) + "."
 
 
 def analyze(c, det):
@@ -390,6 +493,7 @@ def analyze(c, det):
     kinds = set(c.get("kinds", []))
     frames = det.get("frames", [])
     mode = cam_mode(c.get("camera_id"))
+    aspect = det.get("aspect") or 16 / 9
     has_bike = any(kind_of(o["label"]) == "bike" for f in frames for o in f["objs"])
     has_ped = any(kind_of(o["label"]) == "person" for f in frames for o in f["objs"])
     if not frames:
@@ -397,26 +501,28 @@ def analyze(c, det):
         has_ped = bool(re.search(r"pedestrian|person|people|walk", cap))
     if mode == "rider":
         who = "cyclist"
-        best = rider_cam_risk(frames, cap)
-        other = vru_vehicle_risk(frames, use_ego=False)
-        if other["risk"] > best["risk"]:
-            best = other
+        best = rider_cam_risk(frames, aspect)
+        # someone else the rider can see (the cyclist ahead, a pedestrian) with a vehicle right next to them
+        other = vru_vehicle_risk(frames, use_ego=False, skip_own_body=True, aspect_ratio=aspect)
+        if other["risk"] * 0.8 > best["risk"]:
+            best = dict(other, risk=other["risk"] * 0.8, motion="someone_ahead")
     else:
         who = "cyclist" if has_bike or re.search(r"cyclist|bicycl", cap) else ("pedestrian" if has_ped else "none")
-        best = vru_vehicle_risk(frames, use_ego=(mode == "dashcam"))
+        best = vru_vehicle_risk(frames, use_ego=(mode == "dashcam"), aspect_ratio=aspect)
 
-    cue = bool(re.search(r"brak|swerv|sudden|abrupt|close call|near miss|almost|narrowly|cut(s|ting)? off|yield|jump|honk", cap))
+    cue = bool(re.search(r"brak(es|ing)? (hard|sudden)|sudden(ly)? (brak|stop)|swerv|abrupt|close call|near miss|"
+                         r"narrowly|cut(s|ting)? off|honk|jumps? back", cap))
     risk = best["risk"] + (0.15 if cue else 0.0)
     severity = "high" if risk >= 0.75 else "medium" if risk >= 0.45 else "low" if risk >= 0.2 else "none"
 
     threat = "other"
+    if mode == "rider" and best["risk"] > 0:
+        threat = RIDER_THREAT.get(best.get("motion"), "other")
     for k, pat in (("opening_door", r"door"), ("bus_pulling_in", r"\bbus\b"), ("turning_car", r"turn"),
                    ("close_pass", r"pass|overtak|alongside"), ("crossing_car", r"cross"), ("braking", r"brak")):
-        if re.search(pat, cap):
+        if threat == "other" and re.search(pat, cap):
             threat = k
             break
-    if threat == "other" and mode == "rider" and best["side"] in ("left", "right"):
-        threat = "close_pass"
     if threat == "other" and kinds - {"hazard"} and mode != "rider":
         threat = sorted(kinds - {"hazard"})[0]
     if threat == "other" and best.get("ego") and mode == "dashcam":
@@ -450,6 +556,10 @@ def analyze(c, det):
     elif who == "none" or verdict == "NO_CONFLICT":
         warning = "No threat to anyone on a bike or on foot." if hazard == "none" else \
             "Watch the road: " + hazard.replace("_", " ") + " ahead."
+    elif mode == "rider" and best.get("motion") == "someone_ahead":
+        warning = f"{best['veh']} right next to the cyclist or person ahead of you."
+    elif mode == "rider" and best.get("motion"):
+        warning = rider_warning(best)
     else:
         warning = THREAT_WORDS.get(threat, THREAT_WORDS["other"]).format(
             veh=veh, side=SIDE_WORDS.get(side, "")).strip() + "."
@@ -457,7 +567,8 @@ def analyze(c, det):
             "threat_side": side if verdict != "NO_CONFLICT" else "none", "severity": severity,
             "risk": round(min(1.0, risk), 3), "peak_t": best["t"], "hazard": hazard, "warning": warning,
             "has_detections": bool(frames), "cue": cue, "camera_mode": mode,
-            "approaching": bool(best.get("approaching"))}
+            "clearance_m": best.get("clearance_m"), "distance_m": best.get("distance_m"),
+            "motion": best.get("motion"), "approaching": best.get("motion") == "closing_in"}
 
 
 # ---------------------------------------------------------------- build the clip list
