@@ -42,7 +42,7 @@ Real-Time Video Agents Hack NYC · build 9:30 AM · submit by 4:30 PM ET
 You are the **Pipeline agent** for team CloseCall at a one-day hackathon. Your human is **Teammate 1**. On another build machine, **Teammate 2's App agent** builds the web app. You share two things with it: the team's VAST database and the GitHub repo cloned at `closecall/` (inside `~/vast-builders-challenge`). Teammates 3 and 4 have no build machine; they write the human labels.
 
 ### Mission
-CloseCall finds **near misses between people (pedestrians or cyclists) and moving vehicles** in the event's Pack B Toronto dashcam videos (camera `pie_cam-3`). You build the part that **finds** candidate clips, **checks** them with Cosmos, **decides** a final answer per clip, and **scores** how often the system is right against human labels. Teammate 2's app lets a person approve or reject each one.
+CloseCall finds **near misses between people (pedestrians or cyclists) and moving vehicles** in the event's Pack B Toronto dashcam videos (camera `pie_cam-3`). You build the part that **finds** candidate clips, **checks** them with Cosmos, **decides** a final answer per clip, and **scores** how often the system is right against human labels (the score covers near misses only). It also flags **work-zone hazards**: construction areas next to traffic or walkways, exposed wires or cables, open holes or trenches, debris in the road, or heavy equipment near people. Teammate 2's app lets a person approve or reject each one.
 
 ### How to work
 1. Before writing any code, read `README.md`, `ARCHITECTURE_REFERENCE.md` (if present) and every `SKILL.md` under `.cursor/skills/` (especially `ingest/` and `retrieval/`). Use those skills and their APIs. Never invent APIs.
@@ -73,11 +73,11 @@ CloseCall finds **near misses between people (pedestrians or cyclists) and movin
 
 ### Shared contract (Teammate 2's agent depends on these exact names)
 **Tables in the team VAST database**
-- `closecall_candidates`: segment_id, camera_id, query, search_score, has_person, has_vehicle, passed_yolo, created_at
-- `closecall_verdicts`: segment_id, camera_id, start_time, end_time, playback_link, yolo_objects, verdict, type, severity, when_in_clip, reason, final_answer, prompt_version, created_at
+- `closecall_candidates`: segment_id, camera_id, query, kind, search_score, has_person, has_vehicle, passed_yolo, created_at
+- `closecall_verdicts`: segment_id, camera_id, start_time, end_time, playback_link, yolo_objects, verdict, type, severity, when_in_clip, hazard, reason, final_answer, prompt_version, created_at
 - `closecall_decisions` (Teammate 2's agent creates it; read-only for you): decision_id, segment_id, action, reason, reviewer, verdict_at_decision, prompt_version, decided_at
 
-**Allowed values:** verdict and final_answer are each one of `CLOSE_CALL`, `NO_CONFLICT`, `CANT_TELL`.
+**Allowed values:** verdict and final_answer are each one of `CLOSE_CALL`, `NO_CONFLICT`, `CANT_TELL`. kind is `close_call` or `hazard`. hazard is one of `none`, `work_zone`, `wires`, `open_hole`, `debris`, `equipment`, `other`.
 
 **Files**
 - `closecall/notes/schema.md` — the real table and field names you discover in P1
@@ -92,21 +92,23 @@ CloseCall finds **near misses between people (pedestrians or cyclists) and movin
 - list our team's video packs and cameras;
 - count the segments for camera `pie_cam-3`;
 - find the real table and field names for segment id, camera, start/end time, description, YOLO objects and playback link;
-- show 5 example `pie_cam-3` segments with their description and YOLO objects.
+- show 5 example `pie_cam-3` segments with their description and YOLO objects;
+- count how many `pie_cam-3` descriptions mention construction, road work, cones, barriers, wires or cables, holes or trenches, debris, or heavy equipment.
 
 Write `closecall/notes/schema.md` with the real names and how a person opens a clip in a browser (both on the build machine and, if possible, from a laptop at workshop.thecosmoslabs.com).
 - **Pack switch:** if `pie_cam-3` has fewer than about 40 segments, or its descriptions rarely mention people near vehicles, switch to the highway pack's camera(s). Note the switch in `schema.md` and the status file; everything else stays the same.
 - **Done when:** `schema.md` is pushed.
 
 **P2 — Find candidates (10:00).** Create `pipeline/candidates.py`:
-- Run these searches on the chosen camera: "person close to a moving vehicle", "pedestrian crossing in front of a car", "cyclist next to a moving car", "car braking for a pedestrian", "person stepping into the road".
-- Keep every search hit (deduplicated, neighbouring segments merged). For each, record whether YOLO saw a person or bicycle (`has_person`) and a car, bus or truck (`has_vehicle`). `passed_yolo` = both are true.
+- Run these **close-call** searches on the chosen camera (kind = `close_call`): "person close to a moving vehicle", "pedestrian crossing in front of a car", "cyclist next to a moving car", "car braking for a pedestrian", "person stepping into the road".
+- Run these **hazard** searches too (kind = `hazard`): "construction zone next to traffic", "road workers near moving cars", "exposed wires or cables near the road", "debris or object lying in the road", "open hole or trench near the road or sidewalk", "heavy construction equipment near pedestrians".
+- Keep every search hit (deduplicated, neighbouring segments merged). For each, record whether YOLO saw a person or bicycle (`has_person`) and a car, bus or truck (`has_vehicle`). `passed_yolo` = both are true. YOLO can't see cones, wires or holes, so hazard hits don't need `passed_yolo`.
 - Save to `closecall_candidates`.
-- **Done when:** the table has rows and you've printed the counts plus the top 10 hits that passed YOLO.
+- **Done when:** the table has rows and you've printed the counts plus the top 10 close-call hits that passed YOLO and the top 5 hazard hits.
 - **Fallback:** if the searches return junk, also add segments where YOLO alone saw a person and a vehicle (query = "yolo-only").
 
 **P3 — Label sheets (10:15).** Create `pipeline/label_sheet.py`:
-- Take the top 30 hits that passed YOLO plus 30 random segments from the same camera that are not hits. Shuffle them together and number them 1–60.
+- Take the top 30 close-call hits that passed YOLO plus 30 random segments from the same camera that are not hits. Shuffle them together and number them 1–60.
 - Write `labels/labels_teammate3.csv` (clips 1–40) and `labels/labels_teammate4.csv` (clips 21–60), with columns `number, segment_id, how_to_view, label`. `label` is blank. Don't include any model output. Teammates 3 and 4 fill them in through GitHub's web editor, so keep each row on one line with no extra commas inside fields.
 - Write `labels/key.csv` (number → which list the clip came from) for scoring only.
 - Copy the labeling rules from the bottom of this file into `labels/README.md`.
@@ -115,27 +117,29 @@ Write `closecall/notes/schema.md` with the real names and how a person opens a c
 
 **P4 — Check candidates with Cosmos (10:25).**
 - Save the Cosmos question below as `pipeline/prompts/verify_v1.txt`.
-- **STOP-AND-ASK:** show the exact list of segments to re-ingest (only `passed_yolo` hits, max 50) and wait for "OK".
+- **STOP-AND-ASK:** show the exact list of segments to re-ingest (close-call hits that passed YOLO plus up to 10 top hazard hits, max 50 total) and wait for "OK".
 - Then use the ingest skill to re-ingest only those segments with that file as the prompt.
 - Every 2–3 minutes, append a progress line to the status file.
 - **Fallback:** if there's no progress after 15 minutes, stop waiting and apply the fallback rule below (prompt_version = "fallback").
 
 **P5 — Read Cosmos's answers (11:00).** Create `pipeline/verdicts.py`:
-- For each re-ingested segment, read the new description and pull out `VERDICT`, `TYPE`, `SEVERITY`, `WHEN` and `REASON`.
-- If a description is missing or doesn't follow the format, mark it `CANT_TELL`.
+- For each re-ingested segment, read the new description and pull out `VERDICT`, `TYPE`, `SEVERITY`, `WHEN`, `HAZARD` and `REASON`.
+- If a description is missing or doesn't follow the format, mark it `CANT_TELL`. If the HAZARD line is missing, use `none`.
 - Save to `closecall_verdicts` with every contract field. Copy times, playback link and YOLO objects from the segment metadata.
-- **Done when:** you've printed the count of each verdict and 5 examples.
+- **Done when:** you've printed the count of each verdict, the count of each hazard type, and 5 examples.
 
 **P6 — Final answer per clip (11:20).** Create `pipeline/decide.py`:
 - `final_answer` = `CLOSE_CALL` if Cosmos said CLOSE_CALL **and** `passed_yolo`.
 - `NO_CONFLICT` if Cosmos said NO_CONFLICT.
 - Everything else = `CANT_TELL` (it goes to a person).
-- Write `final_answer` into `closecall_verdicts`, push, and write status line: `VERDICTS READY — n CLOSE_CALL, n NO_CONFLICT, n CANT_TELL`.
+- Keep `hazard` as Cosmos reported it. Any clip with a hazard other than `none` also goes to the app's review queue.
+- Write `final_answer` into `closecall_verdicts`, push, and write status line: `VERDICTS READY — n CLOSE_CALL, n NO_CONFLICT, n CANT_TELL, n hazards`.
 
 **P7 — Score it (1:00).** Create `pipeline/evaluate.py`.
 - First `git pull`. If either labels file still has blanks, build and test everything with a temporary fake label file, then **STOP-AND-ASK**: "Labels incomplete: N blanks."
 - **Final human label:** Teammate 3's label for clips 1–40, Teammate 4's for 41–60. **Tuning set** = clips 1–30, **test set** = clips 31–60. Report the test set only.
 - Clips labeled `CANT_TELL` by humans are left out of precision and recall; report how many there were.
+- Hazards aren't scored in this test (no hazard labels yet). Add the count of hazard clips by type to `results.json` as `"hazards_found"`.
 - Each version predicts CLOSE_CALL, NO_CONFLICT or CANT_TELL (abstain) for each clip:
   - **A — Search only:** any search hit = CLOSE_CALL; not a hit = NO_CONFLICT.
   - **B — Search + YOLO:** hit and `passed_yolo` = CLOSE_CALL; else NO_CONFLICT.
@@ -175,24 +179,30 @@ Write `closecall/notes/schema.md` with the real names and how a person opens a c
 
 **Cosmos question → `pipeline/prompts/verify_v1.txt`**
 ```
-You are reviewing dashcam footage for pedestrian safety. Decide whether this clip shows a
+You are reviewing dashcam footage for street safety. First, decide whether this clip shows a
 CLOSE CALL between a person (pedestrian or cyclist) and a moving vehicle. A close call means a
 person in or entering the road comes within about one car length of a moving vehicle, or
 someone must react suddenly (hard braking, swerving, stopping, jumping back).
+Second, note any WORK-ZONE HAZARD you can clearly see: a construction area next to traffic or
+a walkway, exposed wires or cables, an open hole or trench, debris or objects lying in the
+road, or heavy equipment operating near people or traffic.
 Answer in exactly this format:
 VERDICT: CLOSE_CALL | NO_CONFLICT | CANT_TELL
 TYPE: crossing | turning | cyclist | other | none
 SEVERITY: low | medium | high | none
 WHEN: early | middle | late | none
-REASON: one sentence describing what happens.
+HAZARD: none | work_zone | wires | open_hole | debris | equipment | other
+REASON: one sentence describing what happens, including any hazard.
 If the person or vehicle is hidden, the clip is too dark or blurry, or the outcome is cut off,
-answer CANT_TELL. Do not describe anyone's face, clothing or license plate.
+answer CANT_TELL. If you can't clearly see a hazard, answer HAZARD: none.
+Do not describe anyone's face, clothing or license plate.
 ```
 
 **Fallback rule (if re-ingest stalls).** Use each segment's existing description:
 - `CLOSE_CALL` if it mentions a person or cyclist **and** a vehicle close together, or a vehicle braking, stopping or swerving for a person.
 - `NO_CONFLICT` if it mentions people only on sidewalks or far from vehicles.
 - Otherwise `CANT_TELL`.
+- `hazard`: `work_zone` if it mentions construction or road work, `wires` for wires or cables, `open_hole` for a hole or trench, `debris` for debris or objects in the road, `equipment` for an excavator, crane or other heavy machinery; otherwise `none`.
 - prompt_version = "fallback".
 
 **Labeling rules (copy into `labels/README.md`)**
