@@ -33,11 +33,20 @@ CAMERA = os.environ.get("CLOSECALL_CAMERA", "").strip()          # e.g. pie_cam-
 TAGS = [t for t in os.environ.get("CLOSECALL_TAGS", "").split(",") if t.strip()]
 MIN_SIM = float(os.environ.get("CLOSECALL_MIN_SIMILARITY", "0.25"))
 TOP_K = int(os.environ.get("CLOSECALL_TOP_K", "20"))
-MAX_CLIPS = int(os.environ.get("CLOSECALL_MAX_CLIPS", "60"))
+MAX_CLIPS = int(os.environ.get("CLOSECALL_MAX_CLIPS", "100"))
 INSECURE = os.environ.get("VSS_INSECURE", "1") == "1"
 RIDER_CAMS = {c.strip() for c in os.environ.get("CLOSECALL_RIDER_CAMS", "nyc_bike_gopro-1").split(",") if c.strip()}
-SKIP_CAMS = {c.strip() for c in os.environ.get("CLOSECALL_SKIP_CAMS", "smartspace_cam-1,sdg_warehouse_cam-2").split(",") if c.strip()}
-VERSION = "rider_v5"
+SKIP_CAMS = {c.strip() for c in os.environ.get(
+    "CLOSECALL_SKIP_CAMS", "smartspace_cam-1,sdg_warehouse_cam-2,i24_cam-1,neighborhood_cam-1").split(",") if c.strip()}
+STREET_CAMS = ["nyc_streets_cam-1", "nyc_streets_cam-2", "sf_streets_cam-1", "sf_streets_cam-2", "sf_streets_cam-3",
+               "sf_streets_cam-4", "sf_streets_cam-5"]
+LOCATIONS = {"nyc_streets_cam-1": "Walker St, New York (work zone)", "nyc_streets_cam-2": "New York intersection",
+             "sf_streets_cam-1": "San Francisco intersection 1", "sf_streets_cam-2": "San Francisco intersection 2",
+             "sf_streets_cam-3": "San Francisco intersection 3", "sf_streets_cam-4": "San Francisco intersection 4",
+             "sf_streets_cam-5": "San Francisco intersection 5", "pie_cam-3": "Toronto (car dashcam)",
+             "nyc_bike_gopro-1": "New York (bike camera)"}
+PER_CAM = int(os.environ.get("CLOSECALL_PER_CAM", "12"))      # clips kept per location
+VERSION = "city_v1"
 CUTOFF = 5.0          # a danger score of 5.0 or more counts as a close call (for people and for the AI)
 
 RIDER_QUERIES = [
@@ -49,6 +58,17 @@ RIDER_QUERIES = [
     ("crossing_car", "pedestrian crossing in front of a moving car"),
     ("crossing_car", "person stepping into the road in front of a car"),
     ("braking", "car braking hard for a person"),
+]
+STREET_QUERIES = [
+    ("work_zone", "a flagger or worker standing in the street directing traffic"),
+    ("work_zone", "vehicles passing close to a road work zone with cones and barriers"),
+    ("crossing", "pedestrians crossing in front of a turning vehicle"),
+    ("crossing", "a vehicle stopped in the crosswalk while people cross"),
+    ("crossing", "a person crossing the street outside the crosswalk"),
+    ("curb", "a parked car with its door open into the street"),
+    ("curb", "a delivery truck or van blocking a lane or bike lane"),
+    ("cyclist", "a car passing close to a cyclist"),
+    ("crossing", "a person with a stroller or wheelchair crossing the street"),
 ]
 HAZARD_QUERIES = [
     ("hazard", "construction zone next to traffic"),
@@ -474,6 +494,41 @@ def rider_cam_risk(frames, aspect_ratio=16 / 9):
     return best
 
 
+OBS_LABELS = {"work_zone": "Work zone", "crossing": "Crossing", "curb": "Curb & lanes", "cyclist": "Cyclist",
+              "near_miss": "Near miss", "vulnerable": "Stroller / wheelchair"}
+CAPTION_OBS = [
+    ("work_zone", r"flag(ger)?s?\b|construction worker|road ?work(er)?s?|work crew|\bworkers?\b[^.]{0,60}(street|road|cone|barrier)",
+     "Worker or flagger in the street at a work zone"),
+    ("curb", r"door (is )?open|doors? (are )?open|opens? (a|the|its) door|open door", "Car door open into the street"),
+    ("curb", r"double[- ]park|partially blocking|block(s|ing) (the |a )?(lane|bike lane|bus lane|bus stop|traffic)|stopped in the (bike|bus) lane",
+     "Vehicle blocking a lane"),
+    ("crossing", r"(stopped|block(s|ing)|sits|waiting|idling)[^.]{0,30}(in|on|across|over) the crosswalk", "Vehicle stopped in the crosswalk"),
+    ("crossing", r"jaywalk|mid-?block|outside (of )?(the |a )?crosswalk|not (at|in|using) (a|the) crosswalk|between (parked )?cars",
+     "Person crossing outside the crosswalk"),
+    ("crossing", r"run(s|ning)? (a|the) red|through (a|the) red light", "Vehicle running a red light"),
+    ("vulnerable", r"stroller|wheelchair", "Person with a stroller or wheelchair"),
+]
+
+
+def observations(c, a, best):
+    """Specific statements a street-safety team can act on: measured ones first, then what Cosmos described."""
+    cap = (c.get("caption") or "").lower()
+    out = []
+    gap, t = best.get("clearance_m"), best.get("t")
+    workzone = bool(re.search(CAPTION_OBS[0][1], cap)) or a.get("hazard") == "work_zone"
+    if a.get("camera_mode") == "rider" and best.get("motion") and best.get("motion") != "someone_ahead" and best["risk"] > 0:
+        out.append({"type": "cyclist", "text": rider_warning(best), "gap_m": gap, "t": t})
+    elif best["risk"] > 0 and gap is not None and gap <= 1.5:
+        who = "a person in the work zone" if workzone else ("a cyclist" if a.get("who_at_risk") == "cyclist" else "a person on foot")
+        txt = f"{best.get('veh', 'Vehicle')} within {'less than 0.2' if gap < 0.2 else f'{gap:.1f}'} m of {who}"
+        out.append({"type": "work_zone" if workzone else ("cyclist" if a.get("who_at_risk") == "cyclist" else "near_miss"),
+                    "text": txt, "gap_m": gap, "t": t})
+    for typ, pat, text in CAPTION_OBS:
+        if re.search(pat, cap) and not any(o["text"] == text for o in out):
+            out.append({"type": typ, "text": text, "gap_m": None, "t": None})
+    return out
+
+
 def rider_warning(best):
     veh, side = best["veh"], SIDE_WORDS.get(best["side"], "")
     m = best.get("clearance_m")
@@ -570,12 +625,16 @@ def analyze(c, det):
     else:
         warning = THREAT_WORDS.get(threat, THREAT_WORDS["other"]).format(
             veh=veh, side=SIDE_WORDS.get(side, "")).strip() + "."
-    return {"verdict": verdict, "score": None if verdict == "CANT_TELL" else score, "who_at_risk": who,
+    res = {"verdict": verdict, "score": None if verdict == "CANT_TELL" else score, "who_at_risk": who,
             "threat": threat if shown else "none", "threat_side": side, "severity": severity,
             "risk": round(risk, 3), "peak_t": best["t"], "hazard": hazard, "warning": warning,
             "has_detections": bool(frames), "cue": cue, "camera_mode": mode,
             "clearance_m": best.get("clearance_m"), "distance_m": best.get("distance_m"),
-            "motion": best.get("motion"), "approaching": best.get("motion") == "closing_in"}
+            "motion": best.get("motion"), "approaching": best.get("motion") == "closing_in",
+            "location": LOCATIONS.get(c.get("camera_id"), c.get("camera_id") or "?")}
+    res["observations"] = observations(c, res, best)
+    res["category"] = res["observations"][0]["type"] if res["observations"] else "none"
+    return res
 
 
 # ---------------------------------------------------------------- build the clip list
@@ -587,11 +646,12 @@ def build():
     try:
         login(force=True)
         found = {}
-        plan = [(k, q, cam) for k, q in RIDER_QUERIES for cam in sorted(RIDER_CAMS)] + \
-               [(k, q, None) for k, q in RIDER_QUERIES + HAZARD_QUERIES]
-        for kind, q, cam in plan:
+        plan = [(k, q, cam, 6) for k, q in STREET_QUERIES for cam in STREET_CAMS] + \
+               [(k, q, cam, 8) for k, q in RIDER_QUERIES[:5] for cam in sorted(RIDER_CAMS)] + \
+               [(k, q, None, 20) for k, q in STREET_QUERIES + HAZARD_QUERIES]
+        for kind, q, cam, k in plan:
             try:
-                res = search(q, camera=cam, top_k=15 if cam else None)
+                res = search(q, camera=cam, top_k=k)
             except Exception as e:  # keep going with the other searches
                 log(f"search failed for '{q}' ({cam or 'all cameras'}): {e}")
                 continue
@@ -606,7 +666,11 @@ def build():
                 if kind not in c["kinds"]:
                     c["kinds"].append(kind)
                 c["queries"].append(q)
-        ranked = sorted(found.values(), key=lambda c: -c["similarity"])[:MAX_CLIPS]
+        by_cam = {}
+        for c in sorted(found.values(), key=lambda c: -c["similarity"]):
+            by_cam.setdefault(c["camera_id"], []).append(c)
+        ranked = [c for cam_clips in by_cam.values() for c in cam_clips[:PER_CAM]]   # every location gets its share
+        ranked = sorted(ranked, key=lambda c: -c["similarity"])[:MAX_CLIPS]
         clips = []
         for i, c in enumerate(ranked):
             try:
@@ -680,6 +744,29 @@ def kappa(a, b):
     po = sum(1 for x, y in zip(a, b) if x == y) / n
     pe = sum((a.count(c) / n) * (b.count(c) / n) for c in cats)
     return round((po - pe) / (1 - pe), 3) if pe < 1 else 1.0
+
+
+def hotspots():
+    by = {}
+    for c in STATE["clips"]:
+        a = c.get("analysis") or {}
+        cam = c.get("camera_id") or "?"
+        h = by.setdefault(cam, {"camera_id": cam, "location": a.get("location") or cam, "mode": a.get("camera_mode"),
+                                "clips": 0, "close_calls": 0, "observations": {}, "closest_m": None, "worst": None})
+        h["clips"] += 1
+        if a.get("verdict") == "CLOSE_CALL":
+            h["close_calls"] += 1
+        for o in a.get("observations") or []:
+            h["observations"][o["text"] if o.get("gap_m") is None else OBS_LABELS.get(o["type"], o["type"]) + " (measured)"] = \
+                h["observations"].get(o["text"] if o.get("gap_m") is None else OBS_LABELS.get(o["type"], o["type"]) + " (measured)", 0) + 1
+            if o.get("gap_m") is not None and (h["closest_m"] is None or o["gap_m"] < h["closest_m"]):
+                h["closest_m"] = o["gap_m"]
+        if a.get("score") is not None and (h["worst"] is None or a["score"] > h["worst"]["score"]):
+            first = (a.get("observations") or [{}])[0]
+            h["worst"] = {"id": c["id"], "score": a["score"], "text": first.get("text") or a.get("warning")}
+    for h in by.values():
+        h["observations"] = sorted(h["observations"].items(), key=lambda kv: -kv[1])
+    return {"locations": sorted(by.values(), key=lambda h: (-h["close_calls"], -((h["worst"] or {}).get("score") or 0)))}
 
 
 def pearson(pairs):
@@ -821,6 +908,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_json({"decisions": rows[::-1]})
             if p == "/api/accuracy":
                 return self.send_json(accuracy())
+            if p == "/api/hotspots":
+                return self.send_json(hotspots())
             if p == "/api/export":
                 return self.send_json({"exported_at": now_iso(), "decisions": read_jsonl("decisions.jsonl"),
                                        "labels": read_jsonl("labels.jsonl"),
