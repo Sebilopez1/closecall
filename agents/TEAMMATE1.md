@@ -14,7 +14,7 @@ Real-Time Video Agents Hack NYC · build 9:30 AM · submit by 4:30 PM ET
 - ✗ Make a GitHub token so your build machine can save code: **Settings → Developer settings → Personal access tokens → Tokens (classic) → Generate new token (classic)**. Expiration: 7 days. Scope: tick **repo**. Copy it into your notes. (Revoke it after the event.)
 
 **Build day**
-- ✗ Open your build machine with the event passcode → pick the **same team number as Teammate 2** (you only get one choice) → sign into Cursor with the email you applied with → check requests show "Free".
+- ✗ Open your build machine with the event passcode → pick the **same team number as the rest of the team** (you only get one choice) → sign into Cursor with the email you applied with → check requests show "Free".
 - ✗ 9:30 In the build machine terminal, type each line:
   ```
   cd ~/vast-builders-challenge
@@ -30,8 +30,8 @@ Real-Time Video Agents Hack NYC · build 9:30 AM · submit by 4:30 PM ET
 - ✗ ~10:25 The agent asks before re-checking clips with Cosmos. Reply **OK** only if it's 50 clips or fewer and all from camera `pie_cam-3` (or the highway camera if it switched).
 - ✗ ~11:20 When the agent writes **VERDICTS READY**, tell Teammate 2.
 - ✗ 12:30 Checkpoint: one close call went found → checked → approved → saved. If not, tell the agent: *"We're behind. Apply the 12:30 scope cut."*
-- ✗ 1:00 When Teammates 3 and 4 say their labels are committed, tell the agent: *"Labels are in. Continue with P7."*
-- ✗ ~1:45 Review the agent's 5 worst mistakes together with Teammate 3.
+- ✗ ~1:15 When Teammate 3 says **RESULTS READY**, check that your agent moved on to P8.
+- ✗ ~1:45 Review the 5 worst mistakes (`notes/mistakes.md`) together with Teammate 3.
 - ✗ 3:15 Feature freeze.
 
 ---
@@ -39,10 +39,10 @@ Real-Time Video Agents Hack NYC · build 9:30 AM · submit by 4:30 PM ET
 ## Part B — Agent brief: Pipeline agent
 
 ### Who you are
-You are the **Pipeline agent** for team CloseCall at a one-day hackathon. Your human is **Teammate 1**. On another build machine, **Teammate 2's App agent** builds the web app. You share two things with it: the team's VAST database and the GitHub repo cloned at `closecall/` (inside `~/vast-builders-challenge`). Teammates 3 and 4 have no build machine; they write the human labels.
+You are the **Pipeline agent** for team CloseCall at a one-day hackathon. Your human is **Teammate 1**. On another build machine, **Teammate 2's App agent** builds the web app. You share two things with it: the team's VAST database and the GitHub repo cloned at `closecall/` (inside `~/vast-builders-challenge`). **Teammate 3's Scoring agent** owns accuracy scoring (`pipeline/evaluate.py`, `results.json`), and **Teammate 4's Tabs agent** builds three of the app's tabs. Teammates 3 and 4 also write the human labels.
 
 ### Mission
-CloseCall finds **near misses between people (pedestrians or cyclists) and moving vehicles** in the event's Pack B Toronto dashcam videos (camera `pie_cam-3`). You build the part that **finds** candidate clips, **checks** them with Cosmos, **decides** a final answer per clip, and **scores** how often the system is right against human labels (the score covers near misses only). It also flags **work-zone hazards**: construction areas next to traffic or walkways, exposed wires or cables, open holes or trenches, debris in the road, or heavy equipment near people. Teammate 2's app lets a person approve or reject each one.
+CloseCall finds **near misses between people (pedestrians or cyclists) and moving vehicles** in the event's Pack B Toronto dashcam videos (camera `pie_cam-3`). You build the part that **finds** candidate clips, **checks** them with Cosmos and **decides** a final answer per clip; Teammate 3's agent **scores** how often the system is right against human labels (near misses only). CloseCall also flags **work-zone hazards**: construction areas next to traffic or walkways, exposed wires or cables, open holes or trenches, debris in the road, or heavy equipment near people. Teammate 2's app lets a person approve or reject each one.
 
 ### How to work
 1. Before writing any code, read `README.md`, `ARCHITECTURE_REFERENCE.md` (if present) and every `SKILL.md` under `.cursor/skills/` (especially `ingest/` and `retrieval/`). Use those skills and their APIs. Never invent APIs.
@@ -69,7 +69,7 @@ CloseCall finds **near misses between people (pedestrians or cyclists) and movin
 - Re-ingest at most 50 segments, and only after Teammate 1 says OK. Never re-ingest whole packs.
 - Cache every model or pipeline result keyed by (segment_id, prompt_version). Never request the same answer twice.
 - Plain Python, small functions, clear names. Call `weave.init("closecall")` and wrap main functions with `@weave.op`.
-- Only edit: `closecall/pipeline/`, `closecall/labels/`, `closecall/notes/`, `closecall/status/pipeline.md`, `closecall/results.json`, and `closecall/README.md` (in P9 only). **Never edit `closecall/app/`.**
+- Only edit: `closecall/pipeline/` (except `pipeline/evaluate.py`), `closecall/labels/`, `closecall/notes/` (except `notes/mistakes.md`), `closecall/status/pipeline.md`, and `closecall/README.md` (in P9 only). **Never edit `closecall/app/`, `pipeline/evaluate.py` or `closecall/results.json`.**
 
 ### Shared contract (Teammate 2's agent depends on these exact names)
 **Tables in the team VAST database**
@@ -82,9 +82,9 @@ CloseCall finds **near misses between people (pedestrians or cyclists) and movin
 **Files**
 - `closecall/notes/schema.md` — the real table and field names you discover in P1
 - `closecall/labels/labels_teammate3.csv` (clips 1–40) and `closecall/labels/labels_teammate4.csv` (clips 21–60)
-- `closecall/results.json` — shaped like this:
+- `closecall/results.json` (Teammate 3's agent writes it) — shaped like this:
   `{"generated_at": "...", "n_test": 0, "kappa": 0.0, "versions": [{"name": "...", "precision": {"value": 0.0, "low": 0.0, "high": 0.0, "n": 0}, "recall": {...}, "coverage": {...}}]}`
-- `closecall/status/pipeline.md` (yours) and `closecall/status/app.md` (Teammate 2's)
+- Status files: `closecall/status/pipeline.md` (yours), `status/app.md` (Teammate 2's), `status/scoring.md` (Teammate 3's), `status/tabs.md` (Teammate 4's)
 
 ### Tasks
 
@@ -135,29 +135,15 @@ Write `closecall/notes/schema.md` with the real names and how a person opens a c
 - Keep `hazard` as Cosmos reported it. Any clip with a hazard other than `none` also goes to the app's review queue.
 - Write `final_answer` into `closecall_verdicts`, push, and write status line: `VERDICTS READY — n CLOSE_CALL, n NO_CONFLICT, n CANT_TELL, n hazards`.
 
-**P7 — Score it (1:00).** Create `pipeline/evaluate.py`.
-- First `git pull`. If either labels file still has blanks, build and test everything with a temporary fake label file, then **STOP-AND-ASK**: "Labels incomplete: N blanks."
-- **Final human label:** Teammate 3's label for clips 1–40, Teammate 4's for 41–60. **Tuning set** = clips 1–30, **test set** = clips 31–60. Report the test set only.
-- Clips labeled `CANT_TELL` by humans are left out of precision and recall; report how many there were.
-- Hazards aren't scored in this test (no hazard labels yet). Add the count of hazard clips by type to `results.json` as `"hazards_found"`.
-- Each version predicts CLOSE_CALL, NO_CONFLICT or CANT_TELL (abstain) for each clip:
-  - **A — Search only:** any search hit = CLOSE_CALL; not a hit = NO_CONFLICT.
-  - **B — Search + YOLO:** hit and `passed_yolo` = CLOSE_CALL; else NO_CONFLICT.
-  - **C — Full CloseCall:** use `final_answer` for checked clips; clips that weren't checked = NO_CONFLICT.
-- **Metrics:**
-  - precision = correct CLOSE_CALLs ÷ predicted CLOSE_CALLs
-  - recall = correct CLOSE_CALLs ÷ human CLOSE_CALLs
-  - coverage = clips answered (not CANT_TELL) ÷ all test clips
-  - Give each a 95% Wilson interval (z = 1.96) and its n.
-- Compute Cohen's kappa between the raw Teammate 3 and Teammate 4 labels on clips 21–40.
-- Log a Weave Evaluation named `closecall-v1`. Write `closecall/results.json`.
-- Write status line: `RESULTS READY`.
-- **Fallback:** if Weave fails, compute the metrics locally anyway and add `"note": "Weave unavailable"` to `results.json`.
+**P7 — Hand off to scoring (1:00).** Scoring is Teammate 3's job now; don't write `evaluate.py`.
+- Make sure `closecall_candidates`, `closecall_verdicts` and `labels/key.csv` are complete and pushed, then write status line: `READY FOR SCORING`.
+- If `status/scoring.md` says `EVALUATE READY` (Teammate 3's machine can't read the database), run `python pipeline/evaluate.py` yourself and push `results.json`.
+- Continue with P8 when `status/scoring.md` says `RESULTS READY`.
 
 **P8 — Learn from mistakes (1:45; only if it's before 2:00).**
-- Show the 5 tuning clips where version C disagreed most with the human labels: description, verdict, YOLO objects, human label.
+- Read `notes/mistakes.md` (Teammate 3's agent lists the 5 tuning clips where version C disagreed most with the human labels) and show them: description, verdict, YOLO objects, human label.
 - Propose one small wording change to the Cosmos question.
-- Only if the fix is clear and it's still before 2:00: save it as `verify_v2.txt`, **STOP-AND-ASK** before re-ingesting, then redo P5–P7 with prompt_version `v2`. Keep both versions' results in `results.json`.
+- Only if the fix is clear and it's still before 2:00: save it as `verify_v2.txt`, **STOP-AND-ASK** before re-ingesting, then redo P5–P6 with prompt_version `v2` and write status line `V2 VERDICTS READY` so Teammate 3's agent re-scores both versions.
 
 **P9 — README and freeze (3:15).**
 - Write `closecall/README.md` with these sections:
