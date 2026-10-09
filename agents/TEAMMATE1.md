@@ -42,7 +42,7 @@ Real-Time Video Agents Hack NYC · build 9:30 AM · submit by 4:30 PM ET
 You are the **Pipeline agent** for team CloseCall at a one-day hackathon. Your human is **Teammate 1**. On another build machine, **Teammate 2's App agent** builds the web app. You share two things with it: the team's VAST database and the GitHub repo cloned at `closecall/` (inside `~/vast-builders-challenge`). **Teammate 3's Scoring agent** owns accuracy scoring (`pipeline/evaluate.py`, `results.json`), and **Teammate 4's Tabs agent** builds three of the app's tabs. Teammates 3 and 4 also write the human labels.
 
 ### Mission
-CloseCall finds **near misses between people (pedestrians or cyclists) and moving vehicles** in the event's Pack B Toronto dashcam videos (camera `pie_cam-3`). You build the part that **finds** candidate clips, **checks** them with Cosmos and **decides** a final answer per clip; Teammate 3's agent **scores** how often the system is right against human labels (near misses only). CloseCall also flags **work-zone hazards**: construction areas next to traffic or walkways, exposed wires or cables, open holes or trenches, debris in the road, or heavy equipment near people. Teammate 2's app lets a person approve or reject each one.
+CloseCall gives **people on bikes and on foot Tesla-style eyes**: it finds **near misses between cyclists or pedestrians and moving vehicles** in the event's Pack B Toronto dashcam videos (camera `pie_cam-3`), and says who was at risk, what the threat was and which side it came from. You build the part that **finds** candidate clips, **checks** them with Cosmos and **decides** a final answer per clip; Teammate 3's agent **scores** how often the system is right against human labels (near misses only). CloseCall also flags **work-zone hazards**: construction areas next to traffic or walkways, exposed wires or cables, open holes or trenches, debris in the road, or heavy equipment near people. Teammate 2's app lets a person approve or reject each one.
 
 ### How to work
 1. Before writing any code, read `README.md`, `ARCHITECTURE_REFERENCE.md` (if present) and every `SKILL.md` under `.cursor/skills/` (especially `ingest/` and `retrieval/`). Use those skills and their APIs. Never invent APIs.
@@ -74,10 +74,10 @@ CloseCall finds **near misses between people (pedestrians or cyclists) and movin
 ### Shared contract (Teammate 2's agent depends on these exact names)
 **Tables in the team VAST database**
 - `closecall_candidates`: segment_id, camera_id, query, kind, search_score, has_person, has_vehicle, passed_yolo, created_at
-- `closecall_verdicts`: segment_id, camera_id, start_time, end_time, playback_link, yolo_objects, verdict, type, severity, when_in_clip, hazard, reason, final_answer, prompt_version, created_at
+- `closecall_verdicts`: segment_id, camera_id, start_time, end_time, playback_link, yolo_objects, verdict, type, severity, when_in_clip, who_at_risk, threat, threat_side, hazard, reason, final_answer, prompt_version, created_at
 - `closecall_decisions` (Teammate 2's agent creates it; read-only for you): decision_id, segment_id, action, reason, reviewer, verdict_at_decision, prompt_version, decided_at
 
-**Allowed values:** verdict and final_answer are each one of `CLOSE_CALL`, `NO_CONFLICT`, `CANT_TELL`. kind is `close_call` or `hazard`. hazard is one of `none`, `work_zone`, `wires`, `open_hole`, `debris`, `equipment`, `other`.
+**Allowed values:** verdict and final_answer are each one of `CLOSE_CALL`, `NO_CONFLICT`, `CANT_TELL`. kind is `close_call` or `hazard`. hazard is one of `none`, `work_zone`, `wires`, `open_hole`, `debris`, `equipment`, `other`. who_at_risk is `cyclist`, `pedestrian` or `none`. threat is one of `turning_car`, `opening_door`, `close_pass`, `bus_pulling_in`, `crossing_car`, `other`, `none`. threat_side is `left`, `right`, `ahead`, `behind` or `none` (where the threat comes from, as seen by the person at risk).
 
 **Files**
 - `closecall/notes/schema.md` — the real table and field names you discover in P1
@@ -100,7 +100,7 @@ Write `closecall/notes/schema.md` with the real names and how a person opens a c
 - **Done when:** `schema.md` is pushed.
 
 **P2 — Find candidates (10:00).** Create `pipeline/candidates.py`:
-- Run these **close-call** searches on the chosen camera (kind = `close_call`): "person close to a moving vehicle", "pedestrian crossing in front of a car", "cyclist next to a moving car", "car braking for a pedestrian", "person stepping into the road".
+- Run these **close-call** searches on the chosen camera (kind = `close_call`): "person close to a moving vehicle", "pedestrian crossing in front of a car", "cyclist next to a moving car", "car braking for a pedestrian", "person stepping into the road", "car door opening next to a cyclist", "car passing close to a cyclist", "car turning right across a bike lane", "bus pulling over in front of a cyclist".
 - Run these **hazard** searches too (kind = `hazard`): "construction zone next to traffic", "road workers near moving cars", "exposed wires or cables near the road", "debris or object lying in the road", "open hole or trench near the road or sidewalk", "heavy construction equipment near pedestrians".
 - Keep every search hit (deduplicated, neighbouring segments merged). For each, record whether YOLO saw a person or bicycle (`has_person`) and a car, bus or truck (`has_vehicle`). `passed_yolo` = both are true. YOLO can't see cones, wires or holes, so hazard hits don't need `passed_yolo`.
 - Save to `closecall_candidates`.
@@ -123,8 +123,8 @@ Write `closecall/notes/schema.md` with the real names and how a person opens a c
 - **Fallback:** if there's no progress after 15 minutes, stop waiting and apply the fallback rule below (prompt_version = "fallback").
 
 **P5 — Read Cosmos's answers (11:00).** Create `pipeline/verdicts.py`:
-- For each re-ingested segment, read the new description and pull out `VERDICT`, `TYPE`, `SEVERITY`, `WHEN`, `HAZARD` and `REASON`.
-- If a description is missing or doesn't follow the format, mark it `CANT_TELL`. If the HAZARD line is missing, use `none`.
+- For each re-ingested segment, read the new description and pull out `VERDICT`, `WHO`, `THREAT`, `SIDE`, `TYPE`, `SEVERITY`, `WHEN`, `HAZARD` and `REASON` (WHO → `who_at_risk`, THREAT → `threat`, SIDE → `threat_side`).
+- If a description is missing or doesn't follow the format, mark it `CANT_TELL`. If the WHO, THREAT, SIDE or HAZARD line is missing, use `none`.
 - Save to `closecall_verdicts` with every contract field. Copy times, playback link and YOLO objects from the segment metadata.
 - **Done when:** you've printed the count of each verdict, the count of each hazard type, and 5 examples.
 
@@ -165,20 +165,28 @@ Write `closecall/notes/schema.md` with the real names and how a person opens a c
 
 **Cosmos question → `pipeline/prompts/verify_v1.txt`**
 ```
-You are reviewing dashcam footage for street safety. First, decide whether this clip shows a
-CLOSE CALL between a person (pedestrian or cyclist) and a moving vehicle. A close call means a
-person in or entering the road comes within about one car length of a moving vehicle, or
-someone must react suddenly (hard braking, swerving, stopping, jumping back).
-Second, note any WORK-ZONE HAZARD you can clearly see: a construction area next to traffic or
+You are a safety co-pilot for people on bikes and on foot, watching this street footage.
+First, decide whether this clip shows a CLOSE CALL between a person (cyclist or pedestrian)
+and a moving vehicle. A close call means a person in or entering the road comes within about
+one car length of a moving vehicle, or someone must react suddenly (hard braking, swerving,
+stopping, jumping back).
+Second, from the point of view of the person at risk, say what the threat is and which side
+it comes from: a car turning across their path, a car door opening, a car passing too close,
+a bus pulling in, or a car crossing in front.
+Third, note any WORK-ZONE HAZARD you can clearly see: a construction area next to traffic or
 a walkway, exposed wires or cables, an open hole or trench, debris or objects lying in the
 road, or heavy equipment operating near people or traffic.
 Answer in exactly this format:
 VERDICT: CLOSE_CALL | NO_CONFLICT | CANT_TELL
+WHO: cyclist | pedestrian | none
+THREAT: turning_car | opening_door | close_pass | bus_pulling_in | crossing_car | other | none
+SIDE: left | right | ahead | behind | none
 TYPE: crossing | turning | cyclist | other | none
 SEVERITY: low | medium | high | none
 WHEN: early | middle | late | none
 HAZARD: none | work_zone | wires | open_hole | debris | equipment | other
-REASON: one sentence describing what happens, including any hazard.
+REASON: one sentence. If there is a threat, write it as a warning to the person at risk
+(for example: Car turning right across your path.).
 If the person or vehicle is hidden, the clip is too dark or blurry, or the outcome is cut off,
 answer CANT_TELL. If you can't clearly see a hazard, answer HAZARD: none.
 Do not describe anyone's face, clothing or license plate.
@@ -189,6 +197,7 @@ Do not describe anyone's face, clothing or license plate.
 - `NO_CONFLICT` if it mentions people only on sidewalks or far from vehicles.
 - Otherwise `CANT_TELL`.
 - `hazard`: `work_zone` if it mentions construction or road work, `wires` for wires or cables, `open_hole` for a hole or trench, `debris` for debris or objects in the road, `equipment` for an excavator, crane or other heavy machinery; otherwise `none`.
+- `who_at_risk`: `cyclist` if it mentions a cyclist or bike, `pedestrian` if it mentions a person on foot, otherwise `none`. `threat` = `other` and `threat_side` = `none` unless the description makes them obvious.
 - prompt_version = "fallback".
 
 **Labeling rules (copy into `labels/README.md`)**
