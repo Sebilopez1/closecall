@@ -25,10 +25,10 @@ Built at Real-Time Video Agents Hack NYC, October 9, 2026.
 |---|---|---|---|
 | 1 | Pipeline: find, check, score | build machine | `agents/TEAMMATE1.md` |
 | 2 | App: review, decisions, accuracy | build machine | `agents/TEAMMATE2.md` |
-| 3 | Labels (clips 1–40) and testing | laptop | `agents/TEAMMATE3.md` |
-| 4 | Labels (clips 21–60), story, submission, clock | laptop | `agents/TEAMMATE4.md` |
+| 3 | Scoring (accuracy, Weave), labels 1–40, testing | build machine | `agents/TEAMMATE3.md` |
+| 4 | App tabs (Decision log, Accuracy, Data & Limits), labels 21–60, story, submission | build machine | `agents/TEAMMATE4.md` |
 
-### Build machine setup (Teammates 1 and 2)
+### Build machine setup (everyone, same team number)
 Type these in the build machine **terminal**, not the agent chat:
 ```
 cd ~/vast-builders-challenge
@@ -49,21 +49,22 @@ agent
 Pick **Auto Balance** and paste the first message from your TEAMMATE file.
 
 ### How the agents work together
-- GitHub is the shared folder. The two agents never talk directly.
+- GitHub is the shared folder. The four agents never talk directly.
 - For every task, each agent: pulls → builds → tests → commits → pushes → writes one line in its status file.
-- Status files: `status/pipeline.md` (Teammate 1's agent) and `status/app.md` (Teammate 2's agent). Signals to watch for: `LABELS READY`, `VERDICTS READY`, `RESULTS READY`, `APP FROZEN`, `FROZEN`.
-- Each agent edits only its own folders, so they never overwrite each other.
+- Status files: `status/pipeline.md` (Teammate 1), `status/app.md` (Teammate 2), `status/scoring.md` (Teammate 3) and `status/tabs.md` (Teammate 4). Signals to watch for: `SHELL READY`, `LABELS READY`, `VERDICTS READY`, `READY FOR SCORING`, `RESULTS READY`, `TABS UPDATED`, `APP FROZEN`, `FROZEN`.
+- Each agent edits only its own files, so they never overwrite each other. Only Teammate 2's agent deploys the app.
 - Teammates 3 and 4 fill in their label files on github.com (pencil icon → **Commit changes**). Accept the repo invite first.
 - Run git only inside `closecall/`. The parent folder is the event's own repo.
 
 ### Repo map
 ```
 agents/        one brief per teammate
-pipeline/      find, check, decide, score (Teammate 1's agent)
-app/           the web app (Teammate 2's agent)
+pipeline/      find, check, decide (Teammate 1's agent); evaluate.py (Teammate 3's agent)
+app/           the web app shell and Review tab (Teammate 2's agent)
+app/tabs/      one file per tab; Decision log, Accuracy, Data & Limits, counters (Teammate 4's agent)
 labels/        hand labels: labels_teammate3.csv, labels_teammate4.csv
 notes/         schema.md (real table and field names), reviews
-status/        pipeline.md and app.md: progress lines
+status/        pipeline.md, app.md, scoring.md, tabs.md: progress lines
 docs/          demo click path, submission text, judge Q&A
 pitch.md       project description
 results.json   accuracy numbers (after scoring)
