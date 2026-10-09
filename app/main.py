@@ -37,7 +37,8 @@ MAX_CLIPS = int(os.environ.get("CLOSECALL_MAX_CLIPS", "60"))
 INSECURE = os.environ.get("VSS_INSECURE", "1") == "1"
 RIDER_CAMS = {c.strip() for c in os.environ.get("CLOSECALL_RIDER_CAMS", "nyc_bike_gopro-1").split(",") if c.strip()}
 SKIP_CAMS = {c.strip() for c in os.environ.get("CLOSECALL_SKIP_CAMS", "smartspace_cam-1,sdg_warehouse_cam-2").split(",") if c.strip()}
-VERSION = "rider_v3"
+VERSION = "rider_v4"
+CUTOFF = 5.0          # a danger score of 5.0 or more counts as a close call (for people and for the AI)
 
 RIDER_QUERIES = [
     ("close_pass", "car passing close to a cyclist"),
@@ -446,7 +447,7 @@ def rider_cam_risk(frames, aspect_ratio=16 / 9):
             i = g.index(at)
             dh = g[min(len(g) - 1, i + 6)]["h"] - g[max(0, i - 6)]["h"]
             motion = "pulling_away" if dh < -0.04 else "you_passing" if dh > 0.04 else "alongside"
-            r = max(0.0, min(1.0, (0.9 - at["X"]) / 0.6)) * big * (1.0 if at["Z"] <= 2.0 else 0.85) \
+            r = max(0.0, min(1.0, (1.2 - at["X"]) / 1.0)) * big * (1.0 if at["Z"] <= 2.0 else 0.85) \
                 * (0.95 if motion == "you_passing" else 1.0)
             if r > best["risk"]:
                 best = {"risk": r, "side": at["side"], "veh": label.capitalize(), "t": at["t"], "ego": True,
@@ -463,8 +464,8 @@ def rider_cam_risk(frames, aspect_ratio=16 / 9):
                         "motion": "closing_in" if closing else "ahead"}
         # a big vehicle right alongside, filling half the picture: too close to measure, so a person checks
         along = [p for p in g if p["side"] != "ahead" and p["clipped"] and p["h"] >= 0.6 and p["w"] >= 0.45]
-        if len(along) >= 3 and best["risk"] < 0.5:
-            best = {"risk": 0.5, "side": along[1]["side"], "veh": label.capitalize(), "t": along[1]["t"],
+        if len(along) >= 3 and best["risk"] < 0.45:
+            best = {"risk": 0.45, "side": along[1]["side"], "veh": label.capitalize(), "t": along[1]["t"],
                     "ego": True, "clearance_m": None, "distance_m": None, "motion": "alongside"}
     return best
 
@@ -512,8 +513,9 @@ def analyze(c, det):
 
     cue = bool(re.search(r"brak(es|ing)? (hard|sudden)|sudden(ly)? (brak|stop)|swerv|abrupt|close call|near miss|"
                          r"narrowly|cut(s|ting)? off|honk|jumps? back", cap))
-    risk = best["risk"] + (0.15 if cue else 0.0)
-    severity = "high" if risk >= 0.75 else "medium" if risk >= 0.45 else "low" if risk >= 0.2 else "none"
+    risk = min(1.0, best["risk"] + (0.15 if cue else 0.0))
+    score = round(10 * risk, 1)                                  # danger score, 0.0 to 10.0
+    severity = "high" if score >= 7.5 else "medium" if score >= CUTOFF else "low" if score >= 2.0 else "none"
 
     threat = "other"
     if mode == "rider" and best["risk"] > 0:
@@ -538,34 +540,32 @@ def analyze(c, det):
             break
 
     murky = bool(re.search(r"\bdark\b|blurr|unclear|obscur|hard to see|can'?t see", cap))
-    if (who == "none" and not frames and not cap) or (murky and not frames):
-        verdict = "CANT_TELL"
-    elif who != "none" and (severity == "high" or (severity == "medium" and cue)):
+    if not frames and (murky or who != "none" or not cap):
+        verdict = "CANT_TELL"                                    # nothing to measure: a person checks
+    elif score >= CUTOFF and (who != "none" or mode == "rider"):
         verdict = "CLOSE_CALL"
-    elif who != "none" and severity == "medium":
-        verdict = "CANT_TELL"
-    elif not frames and who != "none" and cue:
-        verdict = "CANT_TELL"
     else:
         verdict = "NO_CONFLICT"
+    shown = verdict == "CLOSE_CALL" or (verdict == "NO_CONFLICT" and score >= 2.0)
 
-    side = best["side"] if verdict != "NO_CONFLICT" or best["risk"] > 0.2 else "none"
+    side = best["side"] if shown else "none"
     veh = "Bus" if threat == "bus_pulling_in" else best["veh"]
-    if verdict == "CANT_TELL" and murky and not frames:
-        warning = "Too dark or blurry to be sure. A person should check this clip."
-    elif who == "none" or verdict == "NO_CONFLICT":
+    if verdict == "CANT_TELL":
+        warning = "Too dark or blurry to be sure. A person should check this clip." if murky else \
+            "No object detections for this clip, so nothing to measure. A person should check it."
+    elif mode == "rider" and shown and best.get("motion") and best.get("motion") != "someone_ahead":
+        warning = rider_warning(best)
+    elif who == "none" or not shown:
         warning = "No threat to anyone on a bike or on foot." if hazard == "none" else \
             "Watch the road: " + hazard.replace("_", " ") + " ahead."
     elif mode == "rider" and best.get("motion") == "someone_ahead":
         warning = f"{best['veh']} right next to the cyclist or person ahead of you."
-    elif mode == "rider" and best.get("motion"):
-        warning = rider_warning(best)
     else:
         warning = THREAT_WORDS.get(threat, THREAT_WORDS["other"]).format(
             veh=veh, side=SIDE_WORDS.get(side, "")).strip() + "."
-    return {"verdict": verdict, "who_at_risk": who, "threat": threat if verdict != "NO_CONFLICT" else "none",
-            "threat_side": side if verdict != "NO_CONFLICT" else "none", "severity": severity,
-            "risk": round(min(1.0, risk), 3), "peak_t": best["t"], "hazard": hazard, "warning": warning,
+    return {"verdict": verdict, "score": None if verdict == "CANT_TELL" else score, "who_at_risk": who,
+            "threat": threat if shown else "none", "threat_side": side, "severity": severity,
+            "risk": round(risk, 3), "peak_t": best["t"], "hazard": hazard, "warning": warning,
             "has_detections": bool(frames), "cue": cue, "camera_mode": mode,
             "clearance_m": best.get("clearance_m"), "distance_m": best.get("distance_m"),
             "motion": best.get("motion"), "approaching": best.get("motion") == "closing_in"}
@@ -675,39 +675,69 @@ def kappa(a, b):
     return round((po - pe) / (1 - pe), 3) if pe < 1 else 1.0
 
 
+def pearson(pairs):
+    n = len(pairs)
+    if n < 3:
+        return None
+    mx, my = sum(x for x, _ in pairs) / n, sum(y for _, y in pairs) / n
+    sxy = sum((x - mx) * (y - my) for x, y in pairs)
+    sxx, syy = sum((x - mx) ** 2 for x, _ in pairs), sum((y - my) ** 2 for _, y in pairs)
+    return round(sxy / math.sqrt(sxx * syy), 2) if sxx > 0 and syy > 0 else None
+
+
 def accuracy():
     labels = [r for r in read_jsonl("labels.jsonl") if r.get("labeler", "").lower() != "test"]
     by_clip = {}
     for r in labels:
-        by_clip.setdefault(r["clip_id"], {})[r["labeler"]] = r["label"]   # last label per labeler wins
+        by_clip.setdefault(r["clip_id"], {})[r["labeler"]] = r              # last rating per person wins
     clips = {c["id"]: c for c in STATE["clips"]}
     labelers = sorted({r["labeler"] for r in labels})
-    rows = []
+    rows = []                                                             # (human score, human verdict, clip)
     for cid, per in by_clip.items():
         if cid not in clips:
             continue
-        human = per[sorted(per)[0]]                                    # first labeler alphabetically
-        rows.append((human, clips[cid]["analysis"]["verdict"], clips[cid]))
+        rated = [r for r in per.values() if r.get("label") != "CANT_TELL"]
+        scores = [r["score"] for r in rated if r.get("score") is not None]
+        if scores:
+            hs = round(sum(scores) / len(scores), 2)                      # average of everyone who rated it
+            rows.append((hs, "CLOSE_CALL" if hs >= CUTOFF else "NO_CONFLICT", clips[cid]))
+        elif rated:
+            rows.append((None, sorted(r["label"] for r in rated)[0], clips[cid]))   # older 3-button labels
+        else:
+            rows.append((None, "CANT_TELL", clips[cid]))
+    judged = [r for r in rows if r[1] != "CANT_TELL"]
 
-    def score(pred_of):
-        tp = sum(1 for h, _, c in rows if h == "CLOSE_CALL" and pred_of(c) == "CLOSE_CALL")
-        pp = sum(1 for h, _, c in rows if h != "CANT_TELL" and pred_of(c) == "CLOSE_CALL")
-        hp = sum(1 for h, _, c in rows if h == "CLOSE_CALL")
-        ans = sum(1 for h, _, c in rows if pred_of(c) != "CANT_TELL")
-        return {"precision": wilson(tp, pp), "recall": wilson(sum(1 for h, _, c in rows if h == "CLOSE_CALL" and pred_of(c) == "CLOSE_CALL"), hp),
-                "coverage": wilson(ans, len(rows))}
+    def evaluate(pred_bin, pred_score=None):
+        tp = sum(1 for _, h, c in judged if h == "CLOSE_CALL" and pred_bin(c) == "CLOSE_CALL")
+        pp = sum(1 for _, h, c in judged if pred_bin(c) == "CLOSE_CALL")
+        hp = sum(1 for _, h, c in judged if h == "CLOSE_CALL")
+        answered = [(h, pred_bin(c)) for _, h, c in judged if pred_bin(c) != "CANT_TELL"]
+        out = {"precision": wilson(tp, pp), "recall": wilson(tp, hp),
+               "coverage": wilson(sum(1 for _, _, c in rows if pred_bin(c) != "CANT_TELL"), len(rows)),
+               "agreement": wilson(sum(1 for h, p in answered if h == p), len(answered)), "mae": None, "corr": None}
+        if pred_score:
+            pairs = [(hs, pred_score(c)) for hs, _, c in judged if hs is not None and pred_score(c) is not None]
+            if pairs:
+                out["mae"] = {"value": round(sum(abs(h - p) for h, p in pairs) / len(pairs), 2), "n": len(pairs)}
+                out["corr"] = pearson(pairs)
+        return out
 
     versions = [
-        {"name": "A — search only", **score(lambda c: "CLOSE_CALL" if c["kinds"] and c["kinds"] != ["hazard"] else "NO_CONFLICT")},
-        {"name": "C — CloseCall (Cosmos + YOLO rider check)", **score(lambda c: c["analysis"]["verdict"])},
+        {"name": "A — search only (every clip it found counts as a close call)",
+         **evaluate(lambda c: "CLOSE_CALL" if c["kinds"] and c["kinds"] != ["hazard"] else "NO_CONFLICT")},
+        {"name": "C — CloseCall danger score (Cosmos + YOLO, metres around the rider)",
+         **evaluate(lambda c: c["analysis"]["verdict"], lambda c: c["analysis"].get("score"))},
     ]
     k = None
     if len(labelers) >= 2:
         a_lab, b_lab = labelers[0], labelers[1]
         both = [(p[a_lab], p[b_lab]) for p in by_clip.values() if a_lab in p and b_lab in p]
-        k = {"labelers": [a_lab, b_lab], "n": len(both), "kappa": kappa([x for x, _ in both], [y for _, y in both])}
-    return {"n_labeled": len(rows), "human_cant_tell": sum(1 for h, _, _ in rows if h == "CANT_TELL"),
-            "labelers": labelers, "kappa": k, "versions": versions}
+        sc = [(x["score"], y["score"]) for x, y in both if x.get("score") is not None and y.get("score") is not None]
+        k = {"labelers": [a_lab, b_lab], "n": len(both),
+             "kappa": kappa([x["label"] for x, _ in both], [y["label"] for _, y in both]),
+             "mean_diff": round(sum(abs(x - y) for x, y in sc) / len(sc), 2) if sc else None, "n_scored": len(sc)}
+    return {"n_labeled": len(rows), "human_cant_tell": len(rows) - len(judged), "labelers": labelers,
+            "kappa": k, "versions": versions, "cutoff": CUTOFF}
 
 
 # ---------------------------------------------------------------- HTTP
@@ -812,13 +842,22 @@ class Handler(BaseHTTPRequestHandler):
                        "reason": (b.get("reason") or "")[:500], "reviewer": (b.get("reviewer") or "anonymous")[:60],
                        "verdict_at_decision": a["verdict"], "who_at_risk": a["who_at_risk"], "threat": a["threat"],
                        "threat_side": a["threat_side"], "severity": a["severity"], "hazard": a["hazard"],
-                       "prompt_version": VERSION, "decided_at": now_iso()}
+                       "score_at_decision": a.get("score"), "prompt_version": VERSION, "decided_at": now_iso()}
                 append_jsonl("decisions.jsonl", row)
                 return self.send_json({"ok": True, "decision": row})
             if p == "/api/label":
-                if not clip or b.get("label") not in ("CLOSE_CALL", "NO_CONFLICT", "CANT_TELL") or not b.get("labeler"):
-                    return self.send_json({"error": "need clip_id, label and labeler"}, 400)
-                append_jsonl("labels.jsonl", {"clip_id": clip["id"], "label": b["label"],
+                sc, label = b.get("score"), b.get("label")
+                if sc is not None:
+                    try:
+                        sc = round(float(sc), 1)
+                    except (TypeError, ValueError):
+                        sc = -1.0
+                    if not 0.0 <= sc <= 10.0:
+                        return self.send_json({"error": "score must be 0.0 to 10.0"}, 400)
+                    label = "CLOSE_CALL" if sc >= CUTOFF else "NO_CONFLICT"
+                if not clip or label not in ("CLOSE_CALL", "NO_CONFLICT", "CANT_TELL") or not (b.get("labeler") or "").strip():
+                    return self.send_json({"error": "need clip_id, labeler and a score (or label CANT_TELL)"}, 400)
+                append_jsonl("labels.jsonl", {"clip_id": clip["id"], "score": sc, "label": label,
                                               "labeler": b["labeler"].strip()[:40], "labeled_at": now_iso()})
                 return self.send_json({"ok": True})
             self.send_json({"error": "not found"}, 404)
