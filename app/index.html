@@ -186,11 +186,12 @@ async function loadClips() {
 }
 
 function renderCounters() {
-  const cc = clips.filter(c => c.analysis?.verdict === 'CLOSE_CALL').length;
-  const hz = clips.filter(c => c.analysis?.hazard && c.analysis.hazard !== 'none').length;
+  const scanned = clips.filter(c => !c.reference);
+  const cc = scanned.filter(c => c.analysis?.verdict === 'CLOSE_CALL').length;
+  const hz = scanned.filter(c => c.analysis?.hazard && c.analysis.hazard !== 'none').length;
   const wait = clips.filter(c => !c.decided && (c.analysis?.verdict !== 'NO_CONFLICT' || c.analysis?.hazard !== 'none')).length;
   api('api/decisions').then(d => {
-    const items = [[clips.length, 'clips checked'], [cc, 'close calls (5.0+)'], [hz, 'hazards found'], [wait, 'waiting for review'], [d.decisions.length, 'decisions made']];
+    const items = [[scanned.length, 'clips checked'], [cc, 'close calls (5.0+)'], [hz, 'hazards found'], [wait, 'waiting for review'], [d.decisions.length, 'decisions made']];
     $('#counters').innerHTML = items.map(([n, l]) => `<div class="counter"><b>${n}</b><span>${l}</span></div>`).join('');
   });
 }
