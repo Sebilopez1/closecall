@@ -1,5 +1,7 @@
 """Counter row. The app shell calls render() and places it above the tabs."""
 
+from datetime import datetime
+
 COUNTER_LABELS = (
     "Clips checked",
     "Close calls found",
@@ -51,12 +53,41 @@ except ImportError:
 
 def _parse_time(value):
     text = str(value or "").strip()
+    if not text:
+        return None
     if text.endswith("Z"):
         text = text[:-1] + "+00:00"
     try:
-        return text and __import__("datetime").datetime.fromisoformat(text)
+        return datetime.fromisoformat(text)
     except ValueError:
         return None
+
+
+STYLE = """
+<style>
+.block-container { padding-top: 1.4rem; padding-bottom: 2.2rem; max-width: 1080px; }
+div[data-testid="stMetric"] {
+  background: #f4f8f8;
+  border: 1px solid #d5e2e4;
+  border-radius: 12px;
+  padding: 0.75rem 0.9rem;
+}
+div[data-testid="stMetric"] [data-testid="stMetricValue"] {
+  font-size: 1.6rem;
+  font-variant-numeric: tabular-nums;
+}
+div[data-testid="stMetricLabel"] { font-size: 0.95rem; }
+[data-testid="stDataFrame"] { border-radius: 10px; }
+div[data-testid="stMarkdownContainer"] p { line-height: 1.55; font-size: 1.05rem; }
+h3 { letter-spacing: -0.01em; }
+</style>
+"""
+
+
+def apply_style():
+    import streamlit as st
+
+    st.markdown(STYLE, unsafe_allow_html=True)
 
 
 def _time_key(row):
@@ -121,11 +152,12 @@ def load_snapshot():
 def render():
     import streamlit as st
 
+    apply_style()
     verdicts, decisions, source = load_snapshot()
     counts = compute_counts(verdicts, decisions)
     if source == "demo":
         st.info("DEMO DATA")
-    columns = st.columns(len(COUNTER_LABELS))
+    columns = st.columns(len(COUNTER_LABELS), gap="medium")
     for column, label in zip(columns, COUNTER_LABELS):
         with column:
             st.metric(label, counts[label])

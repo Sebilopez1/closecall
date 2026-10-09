@@ -2,7 +2,7 @@
 
 import os
 import re
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -85,7 +85,13 @@ def visible_decisions(rows):
 def display_records(rows):
     records = []
     for row in visible_decisions(rows):
-        records.append({label: _cell(row.get(key)) for key, label in DISPLAY_COLUMNS})
+        record = {}
+        for key, label in DISPLAY_COLUMNS:
+            if key == "decided_at":
+                record[label] = _display_time(row.get(key))
+            else:
+                record[label] = _cell(row.get(key))
+        records.append(record)
     return records
 
 
@@ -93,6 +99,16 @@ def _cell(value):
     if value is None:
         return ""
     return str(value)
+
+
+def _display_time(value):
+    parsed = _parse_time(value)
+    if parsed is None:
+        return _cell(value)
+    if parsed.tzinfo is not None:
+        parsed = parsed.astimezone(timezone.utc)
+        return parsed.strftime("%Y-%m-%d %H:%M UTC")
+    return parsed.strftime("%Y-%m-%d %H:%M")
 
 
 def bucket_and_schema(schema_text="", env=None):
@@ -145,9 +161,19 @@ def load_decisions():
     return rows, "database"
 
 
+def _apply_style():
+    try:
+        from app.tabs.counters import apply_style
+    except ImportError:
+        from counters import apply_style
+
+    apply_style()
+
+
 def render():
     import streamlit as st
 
+    _apply_style()
     st.subheader("Decision log")
     rows, source = load_decisions()
     if source == "demo":
@@ -168,6 +194,9 @@ def _self_check():
         raise SystemExit("reviewer test was not hidden")
     if display_records([]) != []:
         raise SystemExit("empty decisions should display no rows")
+    times = [row["Time"] for row in display_records(DEMO_DECISIONS)]
+    if times != ["2026-10-09 14:05 UTC", "2026-10-09 13:10 UTC"]:
+        raise SystemExit(f"time display mismatch: {times}")
     bucket, schema = bucket_and_schema("bucket: team-bucket\nschema: closecall\n", env={})
     if (bucket, schema) != ("team-bucket", "closecall"):
         raise SystemExit(f"schema parse failed: {(bucket, schema)}")

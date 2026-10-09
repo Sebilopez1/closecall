@@ -95,9 +95,19 @@ def render_ready(payload):
     st.caption(NOTE)
 
 
+def _apply_style():
+    try:
+        from app.tabs.counters import apply_style
+    except ImportError:
+        from counters import apply_style
+
+    apply_style()
+
+
 def render():
     import streamlit as st
 
+    _apply_style()
     st.subheader("Accuracy")
     payload, state = load_results()
     if state == "waiting":

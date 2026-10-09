@@ -7,3 +7,5 @@ TABS UPDATED
 TABS UPDATED
 10:51 ET — T4 done — Accuracy shows the waiting line until scoring.md says RESULTS READY.
 TABS UPDATED
+10:53 ET — T5 done — Shared spacing and type across the counter row and the three tabs.
+TABS UPDATED

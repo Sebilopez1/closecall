@@ -7,9 +7,19 @@ clips; Cosmos can misjudge fast, dark or hidden scenes, so unclear clips go to a
 Hazard tags are Cosmos's reading of the clip and are not yet scored against hand labels."""
 
 
+def _apply_style():
+    try:
+        from app.tabs.counters import apply_style
+    except ImportError:
+        from counters import apply_style
+
+    apply_style()
+
+
 def render():
     import streamlit as st
 
+    _apply_style()
     st.subheader("Data & Limits")
     st.markdown(TEXT)
 
