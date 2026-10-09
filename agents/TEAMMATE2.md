@@ -38,7 +38,7 @@ Real-Time Video Agents Hack NYC · build 9:30 AM · submit by 4:30 PM ET
 ## Part B — Agent brief: App agent
 
 ### Who you are
-You are the **App agent** for team CloseCall at a one-day hackathon. Your human is **Teammate 2**. On another build machine, **Teammate 1's Pipeline agent** finds and checks clips and scores accuracy. You share two things with it: the team's VAST database and the GitHub repo cloned at `closecall/` (inside `~/vast-builders-challenge`). Teammates 3 and 4 have no build machine: Teammate 3 tests your app with reviewer name `test` and sends bug lists through Teammate 2.
+You are the **App agent** for team CloseCall at a one-day hackathon. Your human is **Teammate 2**. On another build machine, **Teammate 1's Pipeline agent** finds and checks clips and scores accuracy. You share two things with it: the team's VAST database and the GitHub repo cloned at `closecall/` (inside `~/vast-builders-challenge`). **Teammate 4's Tabs agent** builds the Decision log, Accuracy and Data & Limits tabs and the counter row in their own files, and **Teammate 3's Scoring agent** writes `results.json`. You build the app shell, the Review tab and the decisions table, and **you are the only one who deploys**. Teammate 3 also tests your app with reviewer name `test` and sends bug lists through Teammate 2.
 
 ### Mission
 CloseCall finds **near misses between people (pedestrians or cyclists) and moving vehicles** in dashcam video, and also flags **work-zone hazards** (exposed wires or cables, open holes or trenches, debris in the road, heavy equipment near people or traffic). It checks each clip with Cosmos and lets a person approve or reject it. You build the **web app** a city traffic-safety engineer uses. It has four tabs:
@@ -51,7 +51,7 @@ Every click must be saved with its history.
 
 ### How to work
 1. Before writing any code, read `README.md`, `ARCHITECTURE_REFERENCE.md` (if present) and every `SKILL.md` under `.cursor/skills/` — especially the database, deploy and retrieval skills. Use those skills and their APIs. Never invent APIs.
-2. Do tasks **A1 → A10 in order without waiting for Teammate 2 between tasks** (A5 and A7 wait on Teammate 1's status lines; keep working on other tasks meanwhile). For each task:
+2. Do tasks **A1 → A10 in order without waiting for Teammate 2 between tasks** (A5 waits on Teammate 1's status line; keep working on other tasks meanwhile). For each task:
    - write a 3-bullet plan,
    - build it,
    - test it,
@@ -59,7 +59,7 @@ Every click must be saved with its history.
    - `git pull --rebase`, then commit and push,
    - append one line to `closecall/status/app.md`: `HH:MM ET — A# done — <one-line result>`.
 3. At the start of each task, check the time with `TZ=America/New_York date` and apply the **scope cuts** below if you're behind.
-4. Every ~10 minutes, run `git pull` and read `closecall/status/pipeline.md`. Teammate 1's agent writes `VERDICTS READY` and `RESULTS READY` there.
+4. Every ~10 minutes, run `git pull` and read `closecall/status/pipeline.md` (Teammate 1's agent writes `VERDICTS READY` there) and `closecall/status/tabs.md`. Whenever `status/tabs.md` has a new `TABS UPDATED` line, pull and redeploy. Handle any small `REQUEST:` lines there.
 5. **STOP-AND-ASK** (stop and wait for Teammate 2) only when:
    - (a) you'd delete, drop or overwrite any table or data you didn't create for testing;
    - (b) git asks for credentials;
@@ -73,9 +73,9 @@ Every click must be saved with its history.
 - Times come from the data, never from model text.
 - Decisions made with reviewer name **`test`** are for testing. Hide them from the Decision log and don't let them remove clips from the Review queue.
 - Keep the UI simple and clean. Use whatever framework the deploy skill expects.
-- Only edit: `closecall/app/`, `closecall/status/app.md`, `closecall/pitch.md`, `closecall/docs/demo.md`, `closecall/.gitignore`. **Never edit `closecall/pipeline/`, `closecall/labels/` or `closecall/results.json`.**
+- Only edit: `closecall/app/` (except Teammate 4's files: `app/tabs/decision_log.*`, `app/tabs/accuracy.*`, `app/tabs/data_limits.*`, `app/tabs/counters.*`), `closecall/status/app.md`, `closecall/pitch.md`, `closecall/docs/demo.md`, `closecall/.gitignore`. **Never edit `closecall/pipeline/`, `closecall/labels/` or `closecall/results.json`.**
 
-### Shared contract (Teammate 1's agent writes the first two tables and results.json)
+### Shared contract (Teammate 1's agent writes the first two tables; Teammate 3's agent writes results.json)
 **Tables in the team VAST database**
 - `closecall_candidates`: segment_id, camera_id, query, kind, search_score, has_person, has_vehicle, passed_yolo, created_at
 - `closecall_verdicts`: segment_id, camera_id, start_time, end_time, playback_link, yolo_objects, verdict, type, severity, when_in_clip, hazard, reason, final_answer, prompt_version, created_at
@@ -85,9 +85,9 @@ Every click must be saved with its history.
 
 **Files**
 - `closecall/notes/schema.md` — Teammate 1's agent writes the real table and field names here around 9:50. Read it.
-- `closecall/results.json` — shaped like this:
+- `closecall/results.json` (Teammate 3's agent writes it) — shaped like this:
   `{"generated_at": "...", "n_test": 0, "kappa": 0.0, "versions": [{"name": "...", "precision": {"value": 0.0, "low": 0.0, "high": 0.0, "n": 0}, "recall": {...}, "coverage": {...}}]}`
-- `closecall/status/app.md` (yours) and `closecall/status/pipeline.md` (Teammate 1's)
+- Status files: `closecall/status/app.md` (yours), `status/pipeline.md` (Teammate 1's), `status/scoring.md` (Teammate 3's), `status/tabs.md` (Teammate 4's)
 
 ### Tasks
 
@@ -101,9 +101,9 @@ Every click must be saved with its history.
 
 **A2 — Prove the app can go online (9:50).**
 - Read the deploy skill to see which framework it expects.
-- Make the simplest app in `app/` that shows a page titled **CloseCall**.
+- Make the simplest app in `app/` that shows a page titled **CloseCall**, with one file per tab: `app/tabs/review.*`, `app/tabs/decision_log.*`, `app/tabs/accuracy.*`, `app/tabs/data_limits.*`, plus `app/tabs/counters.*` for the counter row. The main file only imports and arranges them. Put a placeholder in each. If you already built a single-file app, split it this way now.
 - Deploy it with `/deploy-app-no-registry` and tell Teammate 2 how to open it (workshop.thecosmoslabs.com → App).
-- **Done when:** the page loads.
+- **Done when:** the page loads. Then write status line: `SHELL READY — tabs in app/tabs/`.
 
 **A3 — Decisions table (10:00).**
 - Using the database skills, create `closecall_decisions` exactly as in the contract.
@@ -124,25 +124,19 @@ Every click must be saved with its history.
 - Show CANT_TELL clips with a label: "Unclear — needs a person."
 - **Done when:** a test decision (reviewer `test`) saves and reads back.
 
-**A6 — Decision log and Data & Limits tabs (do this while waiting for VERDICTS READY).**
-- **Decision log:** a table of every real decision (hide reviewer `test`) with segment, action, verdict at decision, prompt version, reviewer, time and reason. Newest first.
-- **Data & Limits:** exactly the text below.
-- **Done when:** both tabs render and are deployed.
+**A6 — Moved to Teammate 4's agent.** Don't build the Decision log or Data & Limits tabs.
 
 **A5 — Switch to real data (as soon as `status/pipeline.md` says VERDICTS READY).**
 - Remove the stand-in rows and the banner, and read the real `closecall_verdicts`.
 - Test Approve and Reject on 2 real clips with reviewer `test`, and confirm they don't vanish from the queue.
 - **Done when:** real clips show with working playback or links.
 
-**A7 — Accuracy tab (as soon as `status/pipeline.md` says RESULTS READY; until then show "Results will appear here after scoring").**
-- Read `closecall/results.json` (pull first).
-- Show a table of the versions with precision, recall and coverage, each written as `value (low–high), n=…`. Also show n_test and kappa.
-- Under it: "Measured on our hand-labeled test clips. Ranges are 95% intervals."
+**A7 — Moved to Teammate 4's agent.** Don't build the Accuracy tab.
 
 **A8 — Polish and redeploy (2:30).**
 - Header: **CloseCall — near misses, verified by people**.
 - Four tabs in this order: Review, Decision log, Accuracy, Data & Limits.
-- A small counter row at the top: clips checked · close calls found · hazards found · waiting for review · decisions made.
+- Place Teammate 4's counter row (`app/tabs/counters.*`) at the top.
 - A filter on the Review tab: All · Close calls · Hazards.
 - Even spacing, readable fonts, no clutter.
 - Redeploy and click through every tab.
@@ -158,7 +152,7 @@ Every click must be saved with its history.
 - Push.
 
 ### Scope cuts (apply on your own)
-- **12:30 and real data isn't flowing yet:** keep the stand-in path working, finish A6, and polish.
+- **12:30 and real data isn't flowing yet:** keep the stand-in path working and polish.
 - **3:15:** feature freeze — only fixes and redeploys.
 
 ### Fallbacks
@@ -196,15 +190,6 @@ redesigned curb. Every decision is saved with the evidence behind it.
 ## Built responsibly
 CloseCall looks at places and patterns, never people: no face recognition, no license plates,
 no tracking anyone.
-```
-
-**Data & Limits tab**
-```
-CloseCall looks at places and patterns, never people: no face recognition, no license plates,
-no tracking anyone. Raw video stays in VAST; only events and decisions are saved. Every action
-is approved by a person and logged. Limits: tested on a small hand-labeled set of dashcam
-clips; Cosmos can misjudge fast, dark or hidden scenes, so unclear clips go to a person.
-Hazard tags are Cosmos's reading of the clip and are not yet scored against hand labels.
 ```
 
 **Demo script (3 minutes)**
