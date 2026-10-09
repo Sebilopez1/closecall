@@ -4,7 +4,7 @@ Real-Time Video Agents Hack NYC · build 9:30 AM · submit by 4:30 PM ET
 
 **Your job:** your agent builds three of the app's tabs (Decision log, Accuracy, Data & Limits) and the counter row while you label clips, keep the team's clock and make sure we submit on time. Part A (this top part) is for you; Part B at the bottom is your agent's brief.
 
-**What we're building (1 line):** CloseCall finds near misses between people and cars in dashcam video, flags construction-zone hazards like exposed wires or open holes, lets a person approve or reject each one, and reports how often it's right.
+**What we're building (1 line):** CloseCall gives people on bikes and on foot Tesla-style eyes: it finds near misses with cars in dashcam video, shows who was at risk and where the threat came from, lets a person approve or reject each one, and reports how often it's right.
 
 ---
 
@@ -59,29 +59,30 @@ Real-Time Video Agents Hack NYC · build 9:30 AM · submit by 4:30 PM ET
 - ✗ **Judging:** lead the 60-second pitch while Teammate 2 shows the app.
 
 ## Pitch (the submission description)
-Cities usually redesign a dangerous street only after someone is injured, because crash reports are their main warning sign and they arrive too late. Near misses happen far more often and tend to cluster at the same dangerous spots, so they are the earliest warning a city can get. Construction zones add risks that change daily: exposed wires, open trenches and heavy equipment right next to people and traffic. The footage already exists in bus and fleet dashcams, but no one can watch thousands of hours of it. CloseCall watches it, gives a city traffic engineer a short list of close calls and work-zone hazards with the clip as proof, and lets the engineer approve or reject each one; every decision is saved with its evidence. It keeps a person in charge, says "can't tell" when the video is unclear instead of guessing, and measures how often it's right on near misses: correct X% of the time, give or take Y, on clips we labeled by hand. It looks at places and patterns, never people: no face recognition, no license plates, no tracking.
+Cars get more cameras and sensors every year; people on bikes still get a bell. In 2024, 1,103 cyclists were killed on US roads (NHTSA), mostly in moments a rider can't see coming: a car turning across the bike lane, a door opening, a car passing too close, a bus pulling in. CloseCall gives people on bikes and on foot Tesla-style eyes. It watches street footage on their behalf and, for each moment, says who was at risk, what the threat was and which side it came from, shown as a simple rider view with a one-line warning. A safety manager approves or rejects each one, and every decision is saved with its evidence. It also flags construction hazards like exposed wires and open holes, says "can't tell" when the video is unclear instead of guessing, and measures how often it's right: correct X% of the time, give or take Y, on clips we labeled by hand. Today we prove it on street footage; next it runs on a phone or helmet camera and warns riders live. It looks at places and patterns, never people: no face recognition, no license plates, no tracking.
 
 **Tools used:** NVIDIA Cosmos Reason (via the VAST video pipeline) to check each clip · Cosmos Embed + VAST semantic search to find moments · YOLO11 for person and vehicle detection · VAST DataEngine and VastDB as the system of record · W&B Weave for evaluation and tracing · CoreWeave GPUs hosting the models and our app · Cursor.
 
 ## Demo script (3 minutes)
-- 0:00 **Teammate 1:** "Cities fix dangerous streets after someone gets hurt. Near misses are the early warning, but nobody can watch thousands of hours of fleet video. CloseCall does."
-- 0:30 **Teammate 2:** Review tab → open a real clip → Cosmos's verdict and reason → type a reason → **Approve** → Decision log shows the saved record: who, when, which prompt version.
-- 1:10 **Teammate 2:** an "Unclear — needs a person" clip: "When the video can't settle it, CloseCall says so instead of guessing."
-- 1:25 **Teammate 2:** a work-zone hazard clip: "It also flags construction hazards like exposed wires, open holes and debris before someone gets hurt."
-- 1:40 **Teammate 1:** Accuracy tab: "On N clips we labeled by hand, search alone was right P0% of the time. With our checks it's P%, give or take R, and it says can't tell on C%."
-- 2:20 **Teammate 1:** Data & Limits tab: "No faces, no plates, no tracking. Places and patterns, not people."
-- 2:40 **Teammate 2:** "Next: a pilot with one city fleet. The same engine helps delivery fleets coach drivers."
+- 0:00 **Teammate 1:** "Tesla gives cars eyes. People on bikes get a bell. In 2024, 1,103 cyclists were killed on US roads. CloseCall gives riders and walkers the same eyes."
+- 0:25 **Teammate 2:** Review tab → open a real cyclist clip → the Rider view shows the threat and the side it comes from, with Cosmos's one-line warning → type a reason → **Approve** → Decision log shows the saved record: who, when, which prompt version.
+- 1:05 **Teammate 2:** an "Unclear — needs a person" clip: "When the video can't settle it, CloseCall says so instead of guessing."
+- 1:20 **Teammate 2:** a work-zone hazard clip: "It also flags exposed wires, open holes and debris."
+- 1:35 **Teammate 1:** Accuracy tab: "On N clips we labeled by hand, search alone was right P0% of the time. With our checks it's P%, give or take R, and it says can't tell on C%."
+- 2:15 **Teammate 1:** Data & Limits tab: "No faces, no plates, no tracking. Places and patterns, not people."
+- 2:35 **Teammate 2:** "Next: the same eyes on a phone or helmet camera, warning riders live, starting with delivery and bike-share fleets. Every ride adds to a map of dangerous streets for cities."
 
 ## Judge questions and answers
 - **How accurate is it?** "On N clips two of us labeled blind, precision is P with this range, and it says 'can't tell' on C% and sends those to a person."
 - **Why not just trust the AI?** "We measured it: our checks raised precision from P0 to P. When it's unsure, a human decides."
 - **Do near misses matter?** "Bellevue, Washington analyzed about 5,000 hours of intersection video and found near-crashes accurately predict where future crashes happen."
-- **Why construction zones?** "Work zones change every day and put wires, open holes and heavy equipment right next to people and traffic. The same footage can flag them before someone trips or a driver swerves."
-- **Who would use it?** "City traffic-safety teams and construction safety managers, using cameras already on buses and city fleets. Fleets can also use it to coach drivers."
+- **Why bikes?** "Cars keep getting new sensors; riders get almost none. In 2024, 1,103 cyclists were killed on US roads. Radar taillights only see what's behind you; a camera that understands the scene can tell a car is about to turn or a door is about to open."
+- **Is this real-time?** "Today we run recorded clips through the event's video pipeline. The phone version runs detection on the device and warns the rider live."
+- **Who would use it?** "Riders first, through delivery and bike-share fleets that ride all day. Cities get a map of dangerous streets from every ride. Helmet and e-bike makers can license it."
 - **What did you build versus what was provided?** "The event provided the video pipeline and models. We built the candidate finder, the Cosmos check and decision rule, the approval app with decision history, and the accuracy test."
 - **Privacy?** "No faces, no plates, no tracking people. Only places and patterns."
 - **What happens when it's wrong?** "A person rejects it, the rejection is logged, and it becomes a new test case."
-- **What's next?** "Score the hazard tags against hand labels, test on a public near-miss dataset, add night analysis (77% of US pedestrian deaths in 2023 happened in the dark), then pilot with one fleet."
+- **What's next?** "Run it on a phone or helmet camera with live warnings, score the rider-view answers against hand labels, then pilot with one delivery or bike-share fleet."
 
 ## Labeling rules
 - **CLOSE_CALL:** a person in or entering the road comes within about one car length of a moving vehicle, or someone has to react suddenly.
@@ -126,7 +127,7 @@ Build three of the app's four tabs (**Decision log**, **Accuracy** and **Data & 
 - Only edit: `closecall/app/tabs/decision_log.*`, `closecall/app/tabs/accuracy.*`, `closecall/app/tabs/data_limits.*`, `closecall/app/tabs/counters.*`, `closecall/status/tabs.md`. **Never edit anything else.** If you need a change in the shell, add a line `REQUEST: ...` to `status/tabs.md` for Teammate 2's agent.
 
 ### Shared contract (read only)
-- `closecall_verdicts`: segment_id, camera_id, start_time, end_time, playback_link, yolo_objects, verdict, type, severity, when_in_clip, hazard, reason, final_answer, prompt_version, created_at
+- `closecall_verdicts`: segment_id, camera_id, start_time, end_time, playback_link, yolo_objects, verdict, type, severity, when_in_clip, who_at_risk, threat, threat_side, hazard, reason, final_answer, prompt_version, created_at
 - `closecall_decisions`: decision_id, segment_id, action (approve or reject), reason, reviewer, verdict_at_decision, prompt_version, decided_at
 - `closecall/results.json` (Teammate 3's agent writes it) — shaped like this:
   `{"generated_at": "...", "n_test": 0, "kappa": 0.0, "hazards_found": {"wires": 0}, "versions": [{"name": "...", "precision": {"value": 0.0, "low": 0.0, "high": 0.0, "n": 0}, "recall": {...}, "coverage": {...}}]}`
