@@ -70,17 +70,21 @@
   .rate input { flex: 1; accent-color: #f5a524; }
   .rate b { font-size: 30px; min-width: 64px; text-align: right; }
   .quick .btn { min-width: 38px; padding: 5px 8px; }
+  .obs { margin: 6px 0 0 18px; padding: 0; line-height: 1.6; }
+  .obs a { color: var(--accent); }
+  .hot td, .hot th { padding: 7px 10px; vertical-align: top; }
 </style>
 </head>
 <body>
 <header>
   <h1>CloseCall</h1>
-  <span class="tag">Tesla-style eyes for people on bikes and on foot</span>
+  <span class="tag">Vision Zero evidence from the cameras cities already have</span>
   <span class="status"><span id="status">loading…</span> <button class="btn" id="refresh">Re-scan footage</button></span>
 </header>
 <div class="counters" id="counters"></div>
 <nav id="tabs">
   <button data-tab="review" class="on">Review</button>
+  <button data-tab="hotspots">Hotspots</button>
   <button data-tab="label">Label (blind)</button>
   <button data-tab="log">Decision log</button>
   <button data-tab="accuracy">Accuracy</button>
@@ -92,10 +96,11 @@
       <div>
         <div class="filters" id="filters">
           <span class="chip on" data-f="all">All</span>
-          <span class="chip" data-f="rider">Bike cam (rider's view)</span>
+          <span class="chip" data-f="work_zone">Work zones</span>
+          <span class="chip" data-f="crossing">Crossings</span>
+          <span class="chip" data-f="curb">Curb &amp; lanes</span>
           <span class="chip" data-f="cyclist">Cyclists</span>
-          <span class="chip" data-f="pedestrian">Pedestrians</span>
-          <span class="chip" data-f="hazard">Hazards</span>
+          <span class="chip" data-f="rider">Bike camera</span>
           <span class="chip" data-f="open">Waiting for review</span>
         </div>
         <div class="list" id="list"></div>
@@ -112,10 +117,12 @@
     </div>
   </section>
 
+  <section id="tab-hotspots" class="hidden"><div id="hotspots"></div></section>
   <section id="tab-log" class="hidden"><div id="logtable"></div></section>
   <section id="tab-accuracy" class="hidden"><div id="acc" class="center"></div></section>
   <section id="tab-limits" class="hidden">
     <div class="center">
+      <p><b>What it is.</b> CloseCall turns the street cameras a city already has into Vision Zero evidence: for every place it scans, it finds the specific, checkable moments a safety team can act on (a vehicle passing a work-zone flagger, a car stopped in the crosswalk, a door opened into traffic, a close pass on a cyclist), measures how close vehicles came in metres, and links each finding to its clip. It's built for Safe Streets for All safety action plans and before/after checks of street fixes.</p>
       <p>CloseCall looks at places and patterns, never people: no face recognition, no license plates, no tracking anyone. Raw video stays in VAST; only events, decisions and labels are saved. Every action is approved by a person and logged.</p>
       <p><b>How it decides.</b> NVIDIA Cosmos describes each clip and YOLO11 marks every car, bus, truck, bike and person in each frame. On the bike camera the rider is the camera: CloseCall follows each vehicle from frame to frame and uses its real size as a ruler (a car is about 1.5 m tall, a bus about 3 m) to estimate how far ahead it is and how much space it left beside the rider, in metres. Each clip gets a danger score from 0.0 to 10.0: how little space vehicles left the rider (in metres), weighted by who was moving (a vehicle passing the rider counts more than the rider squeezing past slow traffic) and by size (buses and trucks count more), plus 2.5 when Cosmos itself describes a close pass, weaving, swerving or hard braking. 5.0 and up counts as a close call. A big vehicle right alongside, too close to measure, scores 4.0 so a person takes a look. On street and car cameras it checks how close vehicles come to anyone on a bike or on foot at the same depth, and whether Cosmos saw braking, swerving or a near miss.</p>
       <p><b>Limits.</b> Distances come from one camera, so they're estimates (roughly ±30–50%): they assume a forward-facing camera and typical vehicle sizes, and long vehicles seen from the side can't be measured. Tested on a small hand-labeled set of New York bike-camera clips plus some street and dashcam clips. Cosmos and YOLO can miss fast, dark or hidden scenes, so unclear clips go to a person. Hazard tags (wires, holes, debris) are Cosmos's reading of the clip and aren't scored yet. Decisions are stored on the app's disk for the demo.</p>
@@ -145,6 +152,7 @@ document.querySelectorAll('#tabs button').forEach(b => b.onclick = () => {
   document.querySelectorAll('#tabs button').forEach(x => x.classList.toggle('on', x === b));
   document.querySelectorAll('main > section').forEach(s => s.classList.toggle('hidden', s.id !== 'tab-' + b.dataset.tab));
   if (b.dataset.tab === 'log') loadLog();
+  if (b.dataset.tab === 'hotspots') loadHotspots();
   if (b.dataset.tab === 'accuracy') loadAcc();
   if (b.dataset.tab === 'label') loadLabel();
 });
@@ -182,10 +190,12 @@ function renderCounters() {
 function visible() {
   return clips.filter(c => {
     const a = c.analysis || {};
+    const types = (a.observations || []).map(o => o.type);
     if (filter === 'rider') return a.camera_mode === 'rider';
-    if (filter === 'cyclist') return a.who_at_risk === 'cyclist';
-    if (filter === 'pedestrian') return a.who_at_risk === 'pedestrian';
-    if (filter === 'hazard') return a.hazard && a.hazard !== 'none';
+    if (filter === 'work_zone') return types.includes('work_zone') || a.hazard === 'work_zone';
+    if (filter === 'crossing') return types.includes('crossing') || types.includes('near_miss') || types.includes('vulnerable');
+    if (filter === 'curb') return types.includes('curb');
+    if (filter === 'cyclist') return types.includes('cyclist') || a.who_at_risk === 'cyclist';
     if (filter === 'open') return !c.decided;
     return true;
   });
@@ -195,10 +205,11 @@ function renderList() {
   const v = visible();
   $('#list').innerHTML = v.length ? v.map(c => {
     const a = c.analysis || {};
-    const title = a.verdict === 'CANT_TELL' ? 'No data' : a.threat && a.threat !== 'none' ? (THREAT[a.threat] || 'Vehicle close') : 'Nothing close';
+    const ob = (a.observations || [])[0];
+    const title = ob ? ob.text : a.verdict === 'CANT_TELL' ? 'No data' : a.threat && a.threat !== 'none' ? (THREAT[a.threat] || 'Vehicle close') : 'Nothing close';
     return `<div class="card ${current === c.id ? 'sel' : ''} ${c.decided ? 'done' : ''}" style="border-left-color:${scoreCol(a.score)}" data-id="${c.id}">
       <div class="t"><span class="score" style="background:${scoreCol(a.score)}">${esc(scoreTxt(a.score))}</span>${esc(title)} ${a.hazard && a.hazard !== 'none' ? '· ⚠ ' + esc(a.hazard.replace('_', ' ')) : ''}</div>
-      <div class="m">${esc(MODE[a.camera_mode] || '')} · ${esc(a.who_at_risk === 'none' ? 'nobody at risk' : a.who_at_risk)}${a.threat_side && a.threat_side !== 'none' ? ' · ' + esc(a.threat_side) : ''}${a.clearance_m != null && a.threat !== 'none' ? ' · gap ' + esc(gapTxt(a.clearance_m)) : ''}${c.decided ? ' · decided' : ''}</div>
+      <div class="m">${esc(a.location || MODE[a.camera_mode] || '')}${(a.observations || []).length > 1 ? ' · +' + ((a.observations || []).length - 1) + ' more' : ''} · ${esc(a.who_at_risk === 'none' ? 'nobody at risk' : a.who_at_risk)}${a.threat_side && a.threat_side !== 'none' ? ' · ' + esc(a.threat_side) : ''}${a.clearance_m != null && a.threat !== 'none' ? ' · gap ' + esc(gapTxt(a.clearance_m)) : ''}${c.decided ? ' · decided' : ''}</div>
     </div>`;
   }).join('') : '<p class="muted">No clips here yet.</p>';
   document.querySelectorAll('#list .card').forEach(el => el.onclick = () => select(el.dataset.id));
@@ -233,6 +244,7 @@ async function select(id) {
         <div class="legend"><span><i style="background:#f0f0f0"></i>vehicle</span><span><i style="background:#3ad1ff"></i>cyclist</span><span><i style="background:#7ee787"></i>pedestrian</span><span><label><input type="checkbox" id="ov" checked> sensing overlay</label></span>${c.has_detections ? '' : '<span>no YOLO detections for this clip</span>'}</div>
         <div class="warn" style="color:${SEV[a.severity] || SEV.none}">${esc(a.warning || '')}</div>
         <div><span class="pill" style="background:${scoreCol(a.score)};color:#111;font-weight:700;border-color:transparent">danger ${esc(scoreTxt(a.score))} / 10</span><span class="pill">${esc(VERDICT[a.verdict] || a.verdict)}</span><span class="pill">at risk: ${esc(a.who_at_risk)}</span><span class="pill">threat: ${esc(THREAT[a.threat] || a.threat)}</span><span class="pill">side: ${esc(a.threat_side)}</span><span class="pill">severity: ${esc(a.severity)}</span>${a.clearance_m != null && a.threat !== 'none' ? `<span class="pill">gap ≈ ${esc(gapTxt(a.clearance_m))}</span>` : ''}<span class="pill">camera: ${esc(c.camera_id || '?')} (${esc(MODE[a.camera_mode] || '')})</span>${a.hazard !== 'none' ? `<span class="pill">hazard: ${esc(a.hazard)}</span>` : ''}</div>
+        <div class="box" style="margin-top:10px"><h3>What CloseCall found · ${esc(a.location || '')}</h3>${(a.observations || []).length ? '<ul class="obs">' + a.observations.map(o => `<li>${o.t != null ? `<a href="#" data-t="${o.t}">${Number(o.t).toFixed(1)} s</a> · ` : ''}${esc(o.text)}${o.gap_m != null ? ' <span class="muted">(measured)</span>' : ' <span class="muted">(Cosmos)</span>'}</li>`).join('') + '</ul>' : '<p class="muted">Nothing specific found in this clip.</p>'}</div>
         <div class="box" style="margin-top:10px"><h3>What Cosmos saw</h3><div class="caption">${esc(c.caption || '—')}</div>
           <div class="muted" style="font-size:12px;margin-top:6px">Found by: ${esc([...new Set(c.queries || [])].slice(0, 3).join(' · '))} · camera ${esc(c.camera_id || '?')}</div></div>
         <div class="box" style="margin-top:10px"><h3>Decision</h3>
@@ -277,6 +289,7 @@ const KCOL = { bike: '#3ad1ff', person: '#7ee787', vehicle: '#f0f0f0', other: '#
 function startOverlay() {
   cancelAnimationFrame(raf);
   const v = $('#video'), cv = $('#overlay'), bev = $('#bev');
+  document.querySelectorAll('#detail [data-t]').forEach(a => a.onclick = e => { e.preventDefault(); v.currentTime = Number(a.dataset.t); v.play().catch(() => {}); });
   const draw = () => {
     if (!document.body.contains(v)) return;
     const map = timeMap(det?.frames || [], v.duration);
@@ -384,6 +397,20 @@ function drawBev(cv, f) {
   }
 }
 
+async function loadHotspots() {
+  const r = await api('api/hotspots');
+  const rows = r.locations || [];
+  $('#hotspots').innerHTML = rows.length ? `<p class="muted">Every place CloseCall scanned, worst first. Close calls score 5.0 or more out of 10; gaps are measured from the video.</p>
+    <table class="hot"><tr><th>Place</th><th>Clips</th><th>Close calls</th><th>What we see most</th><th>Closest measured gap</th><th>Worst clip</th></tr>
+    ${rows.map(h => `<tr><td><b>${esc(h.location)}</b><div class="muted">${esc(h.camera_id)} · ${esc(MODE[h.mode] || '')}</div></td><td>${h.clips}</td><td><b>${h.close_calls}</b></td>
+      <td>${h.observations.slice(0, 3).map(([k, n]) => `${esc(k)}: ${n}`).join('<br>') || '—'}</td><td>${h.closest_m != null ? esc(gapTxt(h.closest_m)) : '—'}</td>
+      <td>${h.worst ? `<span class="score" style="background:${scoreCol(h.worst.score)}">${esc(scoreTxt(h.worst.score))}</span>${esc(h.worst.text || '')} <button class="btn" data-open="${h.worst.id}">Open</button>` : '—'}</td></tr>`).join('')}</table>` :
+    '<p class="muted">No places scanned yet.</p>';
+  document.querySelectorAll('#hotspots [data-open]').forEach(b => b.onclick = () => {
+    document.querySelector('#tabs button[data-tab=review]').click(); select(b.dataset.open);
+  });
+}
+
 async function loadLog() {
   const d = await api('api/decisions');
   $('#logtable').innerHTML = d.decisions.length ? `<table><tr><th>When</th><th>Action</th><th>Reviewer</th><th>Score</th><th>Verdict at decision</th><th>At risk / threat / side</th><th>Prompt</th><th>Reason</th></tr>${d.decisions.map(x => `<tr><td>${esc(x.decided_at)}</td><td>${esc(x.action)}</td><td>${esc(x.reviewer)}</td><td>${esc(scoreTxt(x.score_at_decision))}</td><td>${esc(VERDICT[x.verdict_at_decision] || x.verdict_at_decision)}</td><td>${esc(x.who_at_risk)} / ${esc(THREAT[x.threat] || x.threat)} / ${esc(x.threat_side)}</td><td>${esc(x.prompt_version)}</td><td>${esc(x.reason)}</td></tr>`).join('')}</table>` : '<p class="muted">No decisions yet. Approve or reject a clip on the Review tab.</p>';
@@ -413,7 +440,7 @@ async function loadLabel() {
   if (lshown === name + '|' + c.id && $('#lsave')) return;     // same clip already on screen: keep the rating in progress
   lshown = name + '|' + c.id;
   $('#lstage').innerHTML = `<div class="vid" style="max-width:860px"><video src="${BASE}video?id=${c.id}" controls autoplay muted playsinline></video></div>
-    <p class="muted">How dangerous is the closest moment for the rider, or anyone else on a bike or on foot? <b>0</b> = nothing near anyone · <b>5</b> = a vehicle in traffic within about an arm's length (half a metre), or someone has to brake or swerve · <b>10</b> = almost hit. Parked cars don't count. 5.0 and up counts as a close call.</p>
+    <p class="muted">How dangerous is the closest moment for anyone on foot, on a bike, or working in the street? <b>0</b> = nothing near anyone · <b>5</b> = a vehicle in traffic within about an arm's length (half a metre), or someone has to brake or swerve · <b>10</b> = almost hit. Parked cars don't count. 5.0 and up counts as a close call.</p>
     <div class="rate"><span class="muted">0</span><input type="range" id="lscore" min="0" max="10" step="0.1" value="5"><span class="muted">10</span><b id="lval">–</b></div>
     <div class="row quick">${[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(n => `<button class="btn" data-q="${n}">${n}</button>`).join('')}</div>
     <div class="row" style="margin-top:10px"><button class="btn big approve" id="lsave" disabled>Save rating</button><button class="btn big reject" id="lskip">Can't judge — skip</button><span class="muted">drag the slider or tap a number</span></div>`;
