@@ -295,6 +295,22 @@ function frameAt(sec, map) {
 function kindOf(l) { return /bicycl|bike|cyclist/.test(l) ? 'bike' : /person|pedestrian/.test(l) ? 'person' : /car|bus|truck|motor|van|vehicle/.test(l) ? 'vehicle' : 'other'; }
 const KCOL = { bike: '#3ad1ff', person: '#7ee787', vehicle: '#f0f0f0', other: '#9aa0a6' };
 
+// Warning signal: from 1 s before a finding until just after it, flash a banner and a border on the picture.
+function drawWarning(g, now, map, ox, oy, dw, dh) {
+  const a = (clips.find(c => c.id === current) || {}).analysis || {};
+  const live = (a.observations || []).filter(o => o.t != null && map(o.t) - now <= 1.0 && now - map(o.t) <= 0.8);
+  if (!live.length) return;
+  const o = live[0], severe = (a.score ?? 0) >= 5 || (o.gap_m != null && o.gap_m <= 0.5);
+  const on = Math.floor(performance.now() / 300) % 2 === 0, col = severe ? '255,59,48' : '255,176,32';
+  const txt = '\u26a0 ' + (severe ? 'WARNING: ' : 'CAUTION: ') + o.text;
+  g.save();
+  g.lineWidth = 5; g.strokeStyle = `rgba(${col},${on ? 1 : 0.35})`; g.strokeRect(ox + 2.5, oy + 2.5, dw - 5, dh - 5);
+  g.font = 'bold 13px sans-serif';
+  const tw = Math.min(dw - 12, g.measureText(txt).width + 14);
+  g.fillStyle = `rgba(${col},${on ? 0.95 : 0.7})`; g.fillRect(ox + 6, oy + 8, tw, 24);
+  g.fillStyle = '#fff'; g.fillText(txt, ox + 13, oy + 25, tw - 14);
+  g.restore();
+}
 const HAZ = { 'ref-manhole': { label: 'faulty manhole (marked by team)', box: [0.13, 0.32, 0.30, 0.40] } };
 function startOverlay() {
   cancelAnimationFrame(raf);
@@ -306,11 +322,11 @@ function startOverlay() {
     const f = frameAt(v.currentTime || 0, map);
     const W = cv.width = cv.clientWidth, H = cv.height = cv.clientHeight, g = cv.getContext('2d');
     g.clearRect(0, 0, W, H);
+    // boxes go on the picture itself: a portrait clip sits inside the 16:9 player with bars on the sides
+    const vw = v.videoWidth || W, vh = v.videoHeight || H, s = Math.min(W / vw, H / vh), dw = vw * s, dh = vh * s, ox = (W - dw) / 2, oy = (H - dh) / 2;
     if (f && $('#ov')?.checked) {
       g.lineWidth = 2; g.font = '12px sans-serif';
       const a = (clips.find(c => c.id === current) || {}).analysis || {};
-      // boxes go on the picture itself: a portrait clip sits inside the 16:9 player with bars on the sides
-      const vw = v.videoWidth || W, vh = v.videoHeight || H, s = Math.min(W / vw, H / vh), dw = vw * s, dh = vh * s, ox = (W - dw) / 2, oy = (H - dh) / 2;
       for (const o of f.objs) {
         const k = kindOf(o.label), [x1, y1, x2, y2] = o.box;
         let col = KCOL[k], txt = o.label;
@@ -325,6 +341,7 @@ function startOverlay() {
       const hz = HAZ[current];   // hazard marked by the team (YOLO's COCO classes have no manholes)
       if (hz) { const [x1, y1, x2, y2] = hz.box; g.strokeStyle = g.fillStyle = '#ff3b30'; g.lineWidth = 3; g.strokeRect(ox + x1 * dw, oy + y1 * dh, (x2 - x1) * dw, (y2 - y1) * dh); g.font = 'bold 12px sans-serif'; g.fillText(hz.label, ox + x1 * dw, oy + y2 * dh + 14); g.lineWidth = 2; g.font = '12px sans-serif'; }
     }
+    if ($('#ov')?.checked) drawWarning(g, v.currentTime || 0, map, ox, oy, dw, dh);
     drawBev(bev, f);
     raf = requestAnimationFrame(draw);
   };
