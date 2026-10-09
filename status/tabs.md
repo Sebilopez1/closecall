@@ -5,3 +5,5 @@ REQUEST: Import render() from app/tabs/data_limits.py, decision_log.py, accuracy
 TABS UPDATED
 10:50 ET — T3 done — Counter row matches a manual count on stand-in rows (5, 2, 2, 2, 2). Reviewer test is ignored.
 TABS UPDATED
+10:51 ET — T4 done — Accuracy shows the waiting line until scoring.md says RESULTS READY.
+TABS UPDATED
