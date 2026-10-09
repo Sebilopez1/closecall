@@ -21,6 +21,7 @@ import traceback
 import urllib.error
 import urllib.parse
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 VSS_URL = os.environ.get("VSS_URL", "").rstrip("/")
@@ -46,7 +47,7 @@ LOCATIONS = {"nyc_streets_cam-1": "Walker St, New York (work zone)", "nyc_street
              "sf_streets_cam-5": "San Francisco intersection 5", "pie_cam-3": "Toronto (car dashcam)",
              "nyc_bike_gopro-1": "New York (bike camera)"}
 PER_CAM = int(os.environ.get("CLOSECALL_PER_CAM", "12"))      # clips kept per location
-VERSION = "city_v1"
+VERSION = "city_v2"
 CUTOFF = 5.0          # a danger score of 5.0 or more counts as a close call (for people and for the AI)
 
 RIDER_QUERIES = [
@@ -638,6 +639,20 @@ def analyze(c, det):
 
 
 # ---------------------------------------------------------------- build the clip list
+def _retry(fn, tries=4):
+    """VSS can answer 502 when the whole event is busy: wait a little and try again."""
+    err = None
+    for k in range(tries):
+        try:
+            return fn()
+        except Exception as e:
+            err = e
+            if not re.search(r"-> 5\d\d|timed out|reset|refused|Connection|Temporary", str(e)):
+                break
+            time.sleep(1.5 * (k + 1))
+    raise err
+
+
 def build():
     with _lock:
         if STATE["status"] == "running":
@@ -645,15 +660,24 @@ def build():
         STATE.update(status="running", started=now_iso(), error=None)
     try:
         login(force=True)
+        prev = {c["source"]: c["detections"] for c in STATE["clips"] if (c.get("detections") or {}).get("frames")}
         found = {}
-        plan = [(k, q, cam, 6) for k, q in STREET_QUERIES for cam in STREET_CAMS] + \
-               [(k, q, cam, 8) for k, q in RIDER_QUERIES[:5] for cam in sorted(RIDER_CAMS)] + \
-               [(k, q, None, 20) for k, q in STREET_QUERIES + HAZARD_QUERIES]
-        for kind, q, cam, k in plan:
+        plan = [(k, q, cam, 6) for k, q in STREET_QUERIES[:6] for cam in STREET_CAMS] + \
+               [(k, q, cam, 8) for k, q in RIDER_QUERIES[:4] for cam in sorted(RIDER_CAMS)] + \
+               [(k, q, None, 20) for k, q in STREET_QUERIES]
+
+        def run_search(job):
+            kind, q, cam, k = job
             try:
-                res = search(q, camera=cam, top_k=k)
-            except Exception as e:  # keep going with the other searches
-                log(f"search failed for '{q}' ({cam or 'all cameras'}): {e}")
+                return job, _retry(lambda: search(q, camera=cam, top_k=k)), None
+            except Exception as e:
+                return job, None, e
+
+        with ThreadPoolExecutor(max_workers=3) as pool:
+            results = list(pool.map(run_search, plan))
+        for (kind, q, cam, k), res, err in results:
+            if err is not None:   # keep going with the other searches
+                log(f"search failed for '{q}' ({cam or 'all cameras'}): {str(err)[:120]}")
                 continue
             items = (res or {}).get("results") or []
             log(f"search '{q}' ({cam or 'all cameras'}): {len(items)} hits")
@@ -671,13 +695,21 @@ def build():
             by_cam.setdefault(c["camera_id"], []).append(c)
         ranked = [c for cam_clips in by_cam.values() for c in cam_clips[:PER_CAM]]   # every location gets its share
         ranked = sorted(ranked, key=lambda c: -c["similarity"])[:MAX_CLIPS]
+        def get_det(c):
+            if c["source"] in prev:                     # reuse detections from the last scan
+                return prev[c["source"]]
+            try:
+                return norm_detections(_retry(lambda: vss("GET", "/api/v1/videos/detections",
+                                                          params={"source": c["source"]})))
+            except Exception as e:
+                return {"frames": [], "fps": None, "error": str(e)[:200]}
+
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            dets = list(pool.map(get_det, ranked))
+        log(f"detections: {sum(1 for d in dets if d.get('frames'))} of {len(dets)} clips")
         clips = []
         for i, c in enumerate(ranked):
-            try:
-                raw = vss("GET", "/api/v1/videos/detections", params={"source": c["source"]})
-                det = norm_detections(raw)
-            except Exception as e:
-                det = {"frames": [], "fps": None, "error": str(e)[:200]}
+            det = dets[i]
             c["detections"] = det
             c["analysis"] = analyze(c, det)
             c["id"] = hashlib.sha1(c["source"].encode()).hexdigest()[:12]
