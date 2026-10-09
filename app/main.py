@@ -37,7 +37,7 @@ MAX_CLIPS = int(os.environ.get("CLOSECALL_MAX_CLIPS", "60"))
 INSECURE = os.environ.get("VSS_INSECURE", "1") == "1"
 RIDER_CAMS = {c.strip() for c in os.environ.get("CLOSECALL_RIDER_CAMS", "nyc_bike_gopro-1").split(",") if c.strip()}
 SKIP_CAMS = {c.strip() for c in os.environ.get("CLOSECALL_SKIP_CAMS", "smartspace_cam-1,sdg_warehouse_cam-2").split(",") if c.strip()}
-VERSION = "rider_v4"
+VERSION = "rider_v5"
 CUTOFF = 5.0          # a danger score of 5.0 or more counts as a close call (for people and for the AI)
 
 RIDER_QUERIES = [
@@ -376,6 +376,9 @@ VEH_HEIGHT = {"car": 1.5, "suv": 1.7, "van": 2.0, "pickup": 1.8, "bus": 3.0, "tr
 FOCAL_Y = float(os.environ.get("CLOSECALL_FOCAL_Y", "1.0"))   # bike cam focal length, in picture heights
 
 
+MOTION_WEIGHT = {"pulling_away": 0.75, "alongside": 0.7, "you_passing": 0.6}
+
+
 def _iou(a, b):
     ix = max(0.0, min(a[2], b[2]) - max(a[0], b[0]))
     iy = max(0.0, min(a[3], b[3]) - max(a[1], b[1]))
@@ -438,7 +441,7 @@ def rider_cam_risk(frames, aspect_ratio=16 / 9):
             "distance_m": None, "motion": None}
     for tr in vehicle_tracks(frames):
         label = tr["label"]
-        big = 1.1 if label in ("bus", "truck") else 1.0
+        big = 1.15 if label in ("bus", "truck") else 1.0
         g = [dict(_geo(p["box"], label, aspect_ratio), t=p["t"]) for p in tr["pts"]]
         # beside the rider: seen mostly from behind (box not too wide), within 3 m, in at least 3 samples
         near = [p for p in g if p["side"] != "ahead" and not p["clipped"] and p["aspect"] <= 2.2 and p["Z"] <= 3.0]
@@ -447,8 +450,9 @@ def rider_cam_risk(frames, aspect_ratio=16 / 9):
             i = g.index(at)
             dh = g[min(len(g) - 1, i + 6)]["h"] - g[max(0, i - 6)]["h"]
             motion = "pulling_away" if dh < -0.04 else "you_passing" if dh > 0.04 else "alongside"
-            r = max(0.0, min(1.0, (1.2 - at["X"]) / 1.0)) * big * (1.0 if at["Z"] <= 2.0 else 0.85) \
-                * (0.95 if motion == "you_passing" else 1.0)
+            # a vehicle passing the rider counts more than the rider squeezing past slow traffic
+            r = max(0.0, min(1.0, (1.0 - at["X"]) / 1.0)) * big * (1.0 if at["Z"] <= 2.0 else 0.85) \
+                * MOTION_WEIGHT[motion]
             if r > best["risk"]:
                 best = {"risk": r, "side": at["side"], "veh": label.capitalize(), "t": at["t"], "ego": True,
                         "clearance_m": round(at["X"], 2), "distance_m": round(at["Z"], 1), "motion": motion}
@@ -457,15 +461,15 @@ def rider_cam_risk(frames, aspect_ratio=16 / 9):
         if len(ahead) >= 3:
             at = sorted(ahead, key=lambda p: p["Z"])[1]
             closing = g[0]["h"] < 0.8 * at["h"]
-            r = max(0.0, min(1.0, (2.0 - at["Z"]) / 1.0)) * (1.0 if closing else 0.7)
+            r = max(0.0, min(1.0, (2.0 - at["Z"]) / 1.0)) * (0.8 if closing else 0.5)
             if r > best["risk"]:
                 best = {"risk": r, "side": "ahead", "veh": label.capitalize(), "t": at["t"], "ego": True,
                         "clearance_m": None, "distance_m": round(at["Z"], 1),
                         "motion": "closing_in" if closing else "ahead"}
         # a big vehicle right alongside, filling half the picture: too close to measure, so a person checks
         along = [p for p in g if p["side"] != "ahead" and p["clipped"] and p["h"] >= 0.6 and p["w"] >= 0.45]
-        if len(along) >= 3 and best["risk"] < 0.45:
-            best = {"risk": 0.45, "side": along[1]["side"], "veh": label.capitalize(), "t": along[1]["t"],
+        if len(along) >= 3 and best["risk"] < 0.4:
+            best = {"risk": 0.4, "side": along[1]["side"], "veh": label.capitalize(), "t": along[1]["t"],
                     "ego": True, "clearance_m": None, "distance_m": None, "motion": "alongside"}
     return best
 
@@ -505,15 +509,18 @@ def analyze(c, det):
         best = rider_cam_risk(frames, aspect)
         # someone else the rider can see (the cyclist ahead, a pedestrian) with a vehicle right next to them
         other = vru_vehicle_risk(frames, use_ego=False, skip_own_body=True, aspect_ratio=aspect)
-        if other["risk"] * 0.8 > best["risk"]:
-            best = dict(other, risk=other["risk"] * 0.8, motion="someone_ahead")
+        if min(other["risk"] * 0.6, 0.3) > best["risk"]:          # a note, never a close call by itself
+            best = dict(other, risk=min(other["risk"] * 0.6, 0.3), motion="someone_ahead")
     else:
         who = "cyclist" if has_bike or re.search(r"cyclist|bicycl", cap) else ("pedestrian" if has_ped else "none")
         best = vru_vehicle_risk(frames, use_ego=(mode == "dashcam"), aspect_ratio=aspect)
+        best = dict(best, risk=best["risk"] * 0.55)      # boxes side by side in a street view are weaker evidence
 
+    # Cosmos itself describing a close interaction is a second, independent signal
     cue = bool(re.search(r"brak(es|ing)? (hard|sudden)|sudden(ly)? (brak|stop)|swerv|abrupt|close call|near miss|"
-                         r"narrowly|cut(s|ting)? off|honk|jumps? back", cap))
-    risk = min(1.0, best["risk"] + (0.15 if cue else 0.0))
+                         r"narrowly|cut(s|ting)? off|honk|jumps? back|pass(es|ing)? (very )?close|passing closely|"
+                         r"passes closely|weav|between (the )?(cars|vehicles|lanes|traffic)|squeez|tight gap", cap))
+    risk = min(1.0, best["risk"] + (0.25 if cue else 0.0))
     score = round(10 * risk, 1)                                  # danger score, 0.0 to 10.0
     severity = "high" if score >= 7.5 else "medium" if score >= CUTOFF else "low" if score >= 2.0 else "none"
 
