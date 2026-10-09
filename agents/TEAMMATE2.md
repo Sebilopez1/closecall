@@ -41,7 +41,7 @@ Real-Time Video Agents Hack NYC · build 9:30 AM · submit by 4:30 PM ET
 You are the **App agent** for team CloseCall at a one-day hackathon. Your human is **Teammate 2**. On another build machine, **Teammate 1's Pipeline agent** finds and checks clips and scores accuracy. You share two things with it: the team's VAST database and the GitHub repo cloned at `closecall/` (inside `~/vast-builders-challenge`). Teammates 3 and 4 have no build machine: Teammate 3 tests your app with reviewer name `test` and sends bug lists through Teammate 2.
 
 ### Mission
-CloseCall finds **near misses between people (pedestrians or cyclists) and moving vehicles** in dashcam video, checks them with Cosmos, and lets a person approve or reject each one. You build the **web app** a city traffic-safety engineer uses. It has four tabs:
+CloseCall finds **near misses between people (pedestrians or cyclists) and moving vehicles** in dashcam video, and also flags **work-zone hazards** (exposed wires or cables, open holes or trenches, debris in the road, heavy equipment near people or traffic). It checks each clip with Cosmos and lets a person approve or reject it. You build the **web app** a city traffic-safety engineer uses. It has four tabs:
 - **Review:** clips waiting for a decision, each with its evidence and Approve / Reject buttons
 - **Decision log:** every decision with its full history
 - **Accuracy:** how often the system is right, with ranges
@@ -77,11 +77,11 @@ Every click must be saved with its history.
 
 ### Shared contract (Teammate 1's agent writes the first two tables and results.json)
 **Tables in the team VAST database**
-- `closecall_candidates`: segment_id, camera_id, query, search_score, has_person, has_vehicle, passed_yolo, created_at
-- `closecall_verdicts`: segment_id, camera_id, start_time, end_time, playback_link, yolo_objects, verdict, type, severity, when_in_clip, reason, final_answer, prompt_version, created_at
+- `closecall_candidates`: segment_id, camera_id, query, kind, search_score, has_person, has_vehicle, passed_yolo, created_at
+- `closecall_verdicts`: segment_id, camera_id, start_time, end_time, playback_link, yolo_objects, verdict, type, severity, when_in_clip, hazard, reason, final_answer, prompt_version, created_at
 - `closecall_decisions` (**you create this**): decision_id, segment_id, action (approve or reject), reason, reviewer, verdict_at_decision, prompt_version, decided_at
 
-**Allowed values:** verdict and final_answer are each one of `CLOSE_CALL`, `NO_CONFLICT`, `CANT_TELL`.
+**Allowed values:** verdict and final_answer are each one of `CLOSE_CALL`, `NO_CONFLICT`, `CANT_TELL`. kind is `close_call` or `hazard`. hazard is one of `none`, `work_zone`, `wires`, `open_hole`, `debris`, `equipment`, `other`.
 
 **Files**
 - `closecall/notes/schema.md` — Teammate 1's agent writes the real table and field names here around 9:50. Read it.
@@ -111,11 +111,12 @@ Every click must be saved with its history.
 - **Done when:** the write and read both work.
 
 **A4 — Review tab with stand-in data (10:10).** Build the main tab.
-- Read clips from `closecall_verdicts` where `final_answer` is CLOSE_CALL or CANT_TELL and no real decision exists yet.
-- Until that table exists with `final_answer`, use 3 made-up rows and show a banner: "DEMO DATA".
+- Read clips from `closecall_verdicts` where `final_answer` is CLOSE_CALL or CANT_TELL, **or** `hazard` is not `none`, and no real decision exists yet.
+- Until that table exists with `final_answer`, use 3 made-up rows (one of them a work-zone hazard) and show a banner: "DEMO DATA".
 - For each clip show:
   - the clip (embed the playback if possible, otherwise a link)
   - Cosmos's verdict, severity and one-line reason
+  - the hazard tag, if any (for example "Work-zone hazard: exposed wires")
   - the YOLO objects
   - the time in the drive
 - Add **Approve** and **Reject** buttons, a reason box and a reviewer name box.
@@ -141,12 +142,13 @@ Every click must be saved with its history.
 **A8 — Polish and redeploy (2:30).**
 - Header: **CloseCall — near misses, verified by people**.
 - Four tabs in this order: Review, Decision log, Accuracy, Data & Limits.
-- A small counter row at the top: clips checked · close calls found · waiting for review · decisions made.
+- A small counter row at the top: clips checked · close calls found · hazards found · waiting for review · decisions made.
+- A filter on the Review tab: All · Close calls · Hazards.
 - Even spacing, readable fonts, no clutter.
 - Redeploy and click through every tab.
 
 **A9 — Demo readiness (3:00).**
-- Make sure at least 3 real CLOSE_CALL or CANT_TELL clips are still undecided, so there's something to approve live.
+- Make sure at least 3 real CLOSE_CALL or CANT_TELL clips, plus 1 hazard clip if any were found, are still undecided, so there's something to approve live.
 - Write `docs/demo.md` with the exact click path for the demo script below.
 - Final redeploy. Write status line: `APP FROZEN`.
 
@@ -176,18 +178,20 @@ Cities usually redesign a dangerous street only after someone is injured, becaus
 warning sign is crash reports, and those arrive too late. Near misses happen far more often
 than crashes and tend to cluster at the same dangerous spots, which makes them the earliest
 warning a city can get. The footage already exists in bus and fleet dashcams and street
-cameras. No one has time to watch thousands of hours of it.
+cameras. Construction zones add risks that change daily: exposed wires, open trenches and
+heavy equipment right next to people and traffic. No one has time to watch thousands of hours
+of it.
 
 ## What CloseCall does
-CloseCall watches the footage and gives a city traffic engineer a short list of close calls,
-each with the clip as evidence. The engineer approves or rejects each one. Approved cases
+CloseCall watches the footage and gives a city traffic engineer a short list of close calls
+and work-zone hazards, each with the clip as evidence. The engineer approves or rejects each one. Approved cases
 become a safety review, which can lead to a longer crossing signal, a speed bump or a
 redesigned curb. Every decision is saved with the evidence behind it.
 
 ## Why it stands out
 1. A person stays in charge. The AI recommends; a human decides, and every decision leaves a record.
 2. It shows its proof and admits doubt. When the video is unclear, it says "can't tell" and hands it to a person.
-3. It measures how often it's right: correct X% of the time, give or take Y, on clips we labeled by hand.
+3. It measures how often it's right on near misses: correct X% of the time, give or take Y, on clips we labeled by hand.
 
 ## Built responsibly
 CloseCall looks at places and patterns, never people: no face recognition, no license plates,
@@ -200,12 +204,14 @@ CloseCall looks at places and patterns, never people: no face recognition, no li
 no tracking anyone. Raw video stays in VAST; only events and decisions are saved. Every action
 is approved by a person and logged. Limits: tested on a small hand-labeled set of dashcam
 clips; Cosmos can misjudge fast, dark or hidden scenes, so unclear clips go to a person.
+Hazard tags are Cosmos's reading of the clip and are not yet scored against hand labels.
 ```
 
 **Demo script (3 minutes)**
 - 0:00 **Teammate 1:** "Cities fix dangerous streets after someone gets hurt. Near misses are the early warning, but nobody can watch thousands of hours of fleet video. CloseCall does."
 - 0:30 **Teammate 2:** Review tab → open a real clip → show Cosmos's verdict and reason → type a reason → **Approve** → Decision log shows the saved record: who, when, which prompt version.
-- 1:20 **Teammate 2:** show an "Unclear — needs a person" clip: "When the video can't settle it, CloseCall says so instead of guessing."
+- 1:10 **Teammate 2:** show an "Unclear — needs a person" clip: "When the video can't settle it, CloseCall says so instead of guessing."
+- 1:25 **Teammate 2:** show a work-zone hazard clip: "It also flags construction hazards like exposed wires, open holes and debris before someone gets hurt."
 - 1:40 **Teammate 1:** Accuracy tab: "On N clips we labeled by hand, search alone was right P0% of the time. With our checks it's P%, give or take R, and it says can't tell on C%."
 - 2:20 **Teammate 1:** Data & Limits tab: "No faces, no plates, no tracking. Places and patterns, not people."
 - 2:40 **Teammate 2:** "Next: a pilot with one city fleet. The same engine helps delivery fleets coach drivers."
@@ -220,5 +226,5 @@ Open a second terminal tab, type `cd ~/vast-builders-challenge` and `agent`, the
 **Brief for the helper agent:** You are the Submission helper for team CloseCall. You may only create or edit files in `closecall/docs/`. Never touch app code, pipeline code or database tables. Pull before you start and push after each item. Teammate 4 submits the project using these files.
 1. Write `docs/submission.md` with every submission field ready to paste: project name, one-paragraph description (from `pitch.md`), the tools-used list below, the repo link (github.com/Sebilopez1/closecall), and a blank for the video link.
    Tools used: NVIDIA Cosmos Reason (via the VAST video pipeline) to check each clip · Cosmos Embed + VAST semantic search to find moments · YOLO11 for person and vehicle detection · VAST DataEngine and VastDB as the system of record · W&B Weave for evaluation and tracing · CoreWeave GPUs hosting the models and our app · Cursor.
-2. Write `docs/judge_qa.md`: 8 likely judge questions with 2-sentence answers, using real numbers from `results.json` once it exists. Cover: accuracy, why not just trust the AI, do near misses matter, who would use it, what we built versus what was provided, privacy, what happens when it's wrong, what's next.
+2. Write `docs/judge_qa.md`: 9 likely judge questions with 2-sentence answers, using real numbers from `results.json` once it exists. Cover: accuracy, why not just trust the AI, do near misses matter, who would use it, what we built versus what was provided, privacy, what happens when it's wrong, why construction zones, what's next.
 3. Check every link in `README.md` and `docs/` and report any broken ones.
